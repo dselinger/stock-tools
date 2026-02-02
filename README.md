@@ -4,6 +4,8 @@ Interactive FastAPI app for analyzing stock option Vanna/GEX profiles and a mult
 
 The main intention was a personalized tool for running locally to aid in stock monitoring, supplementing other information sources. Sharing to Github as a reference for others to what you can do with trendy tools. If desiring a test drive without using the Massive API, go to the home page and select demo mode to go for a test drive.
 
+**NOT Investment Advice** for using this tool at your own discretion.
+
 ## Main Features
 
 - Vanna and GEX heatmaps per ticker using Massive API (formerly Polygon) snapshots. Tunable expiry scope (0DTE/1DTE/weeklies/monthlies), strike windows, caching, auto-refresh, sorting, and other UX niceties.
