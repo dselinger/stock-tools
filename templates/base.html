@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ title or "Dave's Stock Tools" }}</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="alternate icon" href="/favicon.ico">
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.12" defer></script>
+    <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+    <style id="dark-css"></style>
+    <script id="dark-css-data" type="application/json">{{ dark_css | tojson | safe }}</script>
+    <script>
+      try {
+        const raw = document.getElementById('dark-css-data')?.textContent || '""';
+        const css = JSON.parse(raw);
+        const styleEl = document.getElementById('dark-css');
+        if (styleEl) styleEl.textContent = css;
+      } catch (e) {
+        console.error(e);
+      }
+    </script>
+    {% block extra_head %}{% endblock %}
+  </head>
+  <body>
+    {% block content %}{% endblock %}
+  </body>
+</html>

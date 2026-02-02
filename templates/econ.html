@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<div style='display:flex;align-items:center;gap:12px;'>
+  <a href='/' class='home-link' aria-label='Home'>&#8962;</a>
+  <h2 style='margin:0'>Economic News</h2>
+</div>
+  <div class='card' style='margin-top:10px'>
+    <div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:6px'>
+      <div class='muted'>Economic Headlines</div>
+      <button class='btn secondary' onclick="loadEcon()">Refresh</button>
+    </div>
+    <div id='e_events' class='logs full' style='white-space:normal'>{{ ssr_html|safe }}</div>
+  </div>
+<script>
+    function _esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;'); }
+  function domainFromUrl(u){ try { return new URL(u).hostname.replace(/^www\./,''); } catch(e){ return ''; } }
+  function fmtPST(ts){ try { const d = new Date(ts); const f = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false }); const parts = f.formatToParts(d); const obj = Object.fromEntries(parts.map(p=>[p.type,p.value])); const tz = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', timeZoneName: 'short' }).formatToParts(d).find(p=>p.type==='timeZoneName')?.value || 'PT'; return `${obj.year}-${obj.month}-${obj.day} ${obj.hour}:${obj.minute} ${tz}`; } catch(e){ return _esc(String(ts||'')); } }
+  async function loadEcon(){
+    const el = document.getElementById('e_events');
+    try {
+      const r = await fetch('/api/events?nocache=1');
+      if(!r.ok){ if(el) el.textContent = 'Error '+r.status; return; }
+      const j = await r.json();
+      const econ = (j.econ||[]).slice(0,15);
+      if(el){
+        if(econ.length){
+          const rows = econ.map(a=>{
+            const t=_esc(a.title||''); const u=_esc(a.url||'#'); const p=_esc(a.published||'');
+            const dom = domainFromUrl(u); const when = fmtPST(p);
+            const meta = (dom||when) ? ` <span class="muted">— (${_esc(dom)}) -- ${_esc(when)}</span>` : '';
+            return `<li><a href="${u}" target="_blank" rel="noopener">${t}</a>${meta}</li>`;
+          }).join('');
+          el.innerHTML = `<ul>${rows}</ul>`;
+        } else {
+          el.innerHTML = '<div class="muted">(no recent economic headlines)</div>';
+        }
+      }
+    } catch(e){ if(el) el.textContent = 'Error loading'; }
+  }
+  try { document.getElementById('e_events').textContent = 'Loading…'; } catch(e) {}
+  loadEcon();
+  document.addEventListener('DOMContentLoaded', ()=>{ try { loadEcon(); } catch(e) {} setTimeout(()=>{ try { loadEcon(); } catch(e) {} }, 500); });
+  </script>
+{% endblock %}

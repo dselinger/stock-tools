@@ -1,0 +1,703 @@
+{% extends 'base.html' %}
+{% block content %}
+
+    <div class="page-head">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <a href='/' class='home-link' aria-label='Home'>&#8962;</a>
+        <div class="head-titles">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <h2 id="h_symbol" data-symbol="{{ symbol }}" style="margin:0">{{ symbol or 'Ticker' }}</h2>
+            <span class="head-chip">Vanna</span>
+          </div>
+          <div class="head-desc" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <label class="muted" for="h_expiry_sel">Expiry</label>
+            <select id="h_expiry_sel" class="select-input select-sm"></select>
+            <label class="muted" for="expiry_mode">Scope</label>
+            <select id="expiry_mode" class="select-input select-sm">
+              <option value="current" selected>Current expiration</option>
+              <option value="all">All expirations</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="head-actions" style="position:relative"> 
+        <button class="btn secondary" id="menu_btn" type="button" style="position:relative; z-index:10001;" onclick="toggleMenu()">☰</button>
+        <div id="menu_panel" class="card" style="display:none;position:fixed;right:24px;top:68px;min-width:240px;padding:8px; z-index:10000;"> 
+          <div><button class="btn secondary" style="width:100%" onclick="switchToGex(); toggleMenu(false);">GEX</button></div>
+          <div style="margin-top:6px"><a class="btn secondary" style="width:100%;display:block;text-align:center" href="/events/{{ symbol }}" target="_blank" rel="noopener" onclick="toggleMenu(false);">{{ symbol or 'Ticker' }} Events</a></div>
+          <div style="margin-top:6px"><a class="btn secondary" style="width:100%;display:block;text-align:center" href="/econ" onclick="toggleMenu(false);">Economic Events</a></div>
+          <div class="muted" style="margin:8px 0 4px 0;border-top:1px solid #334155;padding-top:6px">TradingView</div>
+          <div><button class="btn secondary" style="width:100%" onclick="copyPairs(); toggleMenu(false);">Pairs</button></div>
+          <div style="margin-top:6px"><button class="btn secondary" style="width:100%" onclick="copyPine(); toggleMenu(false);">Pine</button></div>
+        </div>
+      </div>
+    </div>
+
+  <div id="controls" style="margin-top:12px">
+<form id="runForm" onsubmit="startRun(event)" class="ticker-form">
+  <div class="options-grid" style="display:flex;gap:18px;align-items:stretch;flex-wrap:wrap;width:100%">
+    <div class="card options-card" style="flex:0 0 calc((100% - 54px) / 4);min-width:220px;display:flex;flex-direction:column;gap:10px">
+      <div class="card-title" style="margin:0">Search Options</div>
+      <div class="control-subrow muted-small card-subtext" style="display:grid;grid-template-columns:140px 100px 140px;column-gap:16px;align-items:center;justify-items:start;margin:0">
+        <div style="grid-column:1 / span 2">Ticker and window size</div>
+        <label class="spot-toggle" for="spot_override_toggle" style="grid-column:3">
+          <input type="checkbox" id="spot_override_toggle">
+          <span>Spot override</span>
+        </label>
+      </div>
+      <div class="control-row form-row" style="display:grid;grid-template-columns:140px 100px 140px;column-gap:16px;align-items:center;justify-items:start">
+        <div class="field-ticker">
+          <input type="text" id="symbol" value="{{ symbol }}" placeholder="Ticker (e.g. SPX, NVDA)" required style="width:140px">
+        </div>
+        <div class="field-window">
+          <div class="suffix-input" style="width:100px;position:relative;display:inline-flex;align-items:center">
+            <input type="number" id="window_input" class="num" value="10" min="0.01" max="50" step="0.01" style="width:100%;padding-right:26px">
+            <span class="suffix" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);pointer-events:none;white-space:nowrap">%</span>
+          </div>
+        </div>
+        <div class="field-spot">
+          <input type="text" id="spot_override" placeholder="Spot price" class="disabled" disabled style="width:140px">
+        </div>
+      </div>
+      <div class="form-row" style="margin-top:10px">
+        <label class="muted">Weight</label>
+        <label class="muted"><input type="radio" name="weight" id="w_oi" value="oi" checked> OI</label>
+        <label class="muted"><input type="radio" name="weight" id="w_vol" value="volume"> Volume</label>
+        <label class="muted"><input type="radio" name="weight" id="w_eq" value="equal"> Equal</label>
+      </div>
+      <div class="action-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="progress-sm"><div class="bar-sm" id="bar_sm"></div></div>
+          <span class="muted" id="status"></span>
+        </div>
+        <button class="btn primary" type="submit">Run</button>
+        <button class="btn secondary" type="button" onclick="stopRun()">Stop</button>
+      </div>
+    </div>
+    <div class="card view-card" style="flex:0 0 calc((100% - 54px) / 4);min-width:200px;display:flex;flex-direction:column;gap:10px">
+      <div class="card-title" style="margin:0">View Options</div>
+      <div class="form-row" style="margin:0">
+        <label class="muted">Auto refresh</label>
+        <select id="autorefresh" class="select-input" onchange="scheduleRefreshFromSelect()">
+          <option value="0">Off</option>
+          <option value="60">1 min</option>
+          <option value="300" selected>5 min</option>
+          <option value="900">15 min</option>
+        </select>
+      </div>
+    </div>
+    <div class="card ticker-details" style="flex:0 0 calc((100% - 18px) / 2);min-width:300px;display:flex;flex-direction:column;gap:10px">
+      <div class="card-title" style="margin:0">Ticker Details</div>
+      <div class="meta-grid">
+        <div class="meta-tile">
+          <div class="meta-label">Expiry</div>
+          <div class="meta-value" id="h_expiry">—</div>
+        </div>
+        <div class="meta-tile">
+          <div class="meta-label">Spot</div>
+          <div class="meta-value" id="h_spot">—</div>
+          <div class="meta-subvalue" id="h_day">Day move —</div>
+        </div>
+        <div class="meta-tile">
+          <div class="meta-label">After hours</div>
+          <div class="meta-value" id="h_ah">—</div>
+          <div class="meta-subvalue">vs RTH close</div>
+        </div>
+        <div class="meta-tile">
+          <div class="meta-label">Net Vanna</div>
+          <div class="meta-value" id="h_net">—</div>
+          <div class="meta-subvalue" id="h_net_delta">Δ vs last —</div>
+        </div>
+        <div class="meta-tile">
+          <div class="meta-label">Open Interest</div>
+          <div class="meta-value" id="h_oi">—</div>
+        </div>
+        <div class="meta-tile">
+          <div class="meta-label">IV Median</div>
+          <div class="meta-value" id="h_iv">—</div>
+        </div>
+        <div class="meta-tile">
+          <div class="meta-label">Refreshed</div>
+          <div class="meta-value" id="h_refreshed">—</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+    <div id="error_banner" class="alert" style="display:none;margin-top:10px"></div>
+  </div>
+
+    <div class="row" style="margin-top:18px">
+      <div class="card"><h3>Chart A — Vanna by Strike (Calls vs Puts)</h3><div id="chart_net" style="height:660px"></div></div>
+      <div class="card"><h3>Chart B — Accumulated Net Vanna</h3><div id="chart_split" style="height:660px"></div></div>
+    </div>
+
+    <!-- Debug console moved to /debug -->
+
+    <script>
+const SERVER_SYMBOL = (document.getElementById('h_symbol')?.dataset.symbol) || '';
+let vWindowFromUrl = false;
+let vSpotFromUrl = false;
+      let currentJobId = null;
+      let activeJobId = null;
+      let isRunning = false;
+      let refreshTimer = null;
+      let currentStatus = 'idle';
+      let windowDirty = false;
+      let haveResult = false;
+      let debugOpen = true;
+      function setLogsFromArray(lines) {
+        let combined = [];
+        try { if (Array.isArray(window.__preludeLogs) && window.__preludeLogs.length) combined = window.__preludeLogs.slice(); } catch(e) {}
+        combined = combined.concat(lines||[]);
+        const text = combined.join('\\n');
+        const targets = [document.getElementById('debug_logs'), document.getElementById('logs')].filter(Boolean);
+        for (const el of targets) { el.textContent = text; if(document.getElementById('autoscroll')?.checked) el.scrollTop = 1e9; }
+      }
+      function appendLog(line) {
+        const targets = [document.getElementById('debug_logs'), document.getElementById('logs')].filter(Boolean);
+        for (const el of targets) { el.textContent += (el.textContent?'\\n':'') + line; if(document.getElementById('autoscroll')?.checked) el.scrollTop = 1e9; }
+      }
+      function copyLogs() {
+        const el = document.getElementById('debug_logs') || document.getElementById('logs');
+        if(!el) return;
+        try { if (navigator && navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(el.textContent); } } catch(e) {}
+      }
+      function setSpotOverrideEnabled(on){
+        const box = document.getElementById('spot_override_toggle');
+        const inp = document.getElementById('spot_override');
+        if(box) box.checked = !!on;
+        if(inp){
+          inp.disabled = !on;
+          inp.classList.toggle('disabled', !on);
+          const color = on ? '' : '#8a98ad';
+          inp.style.color = color;
+          inp.style.webkitTextFillColor = color;
+          inp.style.opacity = on ? '' : '0.7';
+        }
+      }
+      function applyExpiryModeState(){
+        const modeEl = document.getElementById('expiry_mode');
+        const expSel = document.getElementById('h_expiry_sel');
+        const isAll = (modeEl && modeEl.value === 'all');
+        if(expSel){
+          expSel.disabled = isAll;
+          expSel.classList.toggle('muted', expSel.disabled);
+        }
+      }
+      async function startRun(ev) {
+        ev.preventDefault();
+        const sym = document.getElementById('symbol').value.trim().toUpperCase();
+        const hsym = document.getElementById('h_symbol'); if(hsym) hsym.textContent = sym || 'Ticker';
+        if(!sym) { document.getElementById('status').textContent='Enter a symbol'; return; }
+        const expSel = document.getElementById('h_expiry_sel');
+        const expiry = expSel && expSel.value ? expSel.value : null;
+        const spotToggle = document.getElementById('spot_override_toggle');
+        const spot = (spotToggle && spotToggle.checked) ? document.getElementById('spot_override').value.trim() : '';
+        // weight
+        const wEl = document.querySelector('input[name="weight"]:checked');
+        const weight = (wEl && wEl.value) || 'oi';
+        try { localStorage.setItem('vanna:weight', weight); } catch(e) {}
+        const pctWindow = (parseFloat(document.getElementById('window_input').value||'10')/100.0) || 0.10;
+        document.getElementById('status').textContent = 'Starting…';
+        setLogsFromArray([]);
+        document.getElementById('bar_sm').style.width = '5%';
+        const pctEl = document.getElementById('bar_pct'); if(pctEl) pctEl.textContent = '5%';
+        isRunning = true;
+        try {
+          const emode = document.getElementById('expiry_mode')?.value || 'current';
+          const isAllScope = emode === 'all';
+          let sendExpiry = expiry;
+          if (isAllScope) { sendExpiry = null; }
+          try { await fetch('/api/debug/client', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message:'vanna:request', status:'info', meta:{symbol:sym, expiry: sendExpiry, next_only: false, pct_window:pctWindow, emode}})}); } catch(e) {}
+          appendLog('POST /api/start …');
+          const res = await fetch('/api/start', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({ symbol: sym, spot_override: spot || null, next_only: false, pct_window: pctWindow, weight: weight, expiry: sendExpiry, expiry_mode: emode })
+          });
+          appendLog('… response ' + res.status);
+          if (!res.ok) throw new Error('Start failed (' + res.status + ')');
+          const payload = await res.json();
+          currentJobId = payload.job_id;
+          activeJobId = currentJobId;
+          try { await fetch('/api/debug/client', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message:'vanna:job_started', status:'info', meta:{symbol:sym, job_id: currentJobId}})}); } catch(e) {}
+          appendLog('Job started: ' + currentJobId);
+          pollStatus(currentJobId);
+          const t0 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+          const data = await waitForResult(currentJobId);
+          // only render if this job is still the active one
+          if (activeJobId === currentJobId) {
+            try { await fetch('/api/debug/client', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message:'vanna:result', status:'info', meta:{symbol:sym, job_id: currentJobId, strikes:(data?.strikes||[]).length}})}); } catch(e) {}
+            try { await fetch('/api/debug/client', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message:'vanna:render_start', status:'info', meta:{symbol:sym, job_id: currentJobId}})}); } catch(e) {}
+            renderCharts(data);
+            try { await fetch('/api/debug/client', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message:'vanna:render_ok', status:'success', meta:{symbol:sym, job_id: currentJobId}})}); } catch(e) {}
+            // cache for quick reloads
+            try {
+              const params = {
+                expiry: (sendExpiry||''),
+                window: String(document.getElementById('window_input').value||''),
+                spot: (spot||''),
+                weight: (weight||'oi')
+              };
+              const t1 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+              const durMs = Math.max(0, t1 - t0);
+              const perfMsg = `Job runtime: ${(durMs).toFixed ? durMs.toFixed(0) : durMs} ms (cached)`;
+              window.__clientPerfMsg = perfMsg;
+              appendLog(perfMsg);
+              saveVannaCache(sym, params, data, {dur_ms: durMs});
+              if (window.__clientCacheMsg) appendLog(window.__clientCacheMsg);
+            } catch(e) {}
+          }
+          setLastRefreshed();
+          // Update URL with current params for consistency
+          try {
+            const win = document.getElementById('window_input').value || '';
+            const effExpiry = isAllScope ? '' : (expiry||'');
+            const qs = new URLSearchParams({symbol:sym, spot:spot||'', window:win, expiry: effExpiry, weight: (weight||'oi'), emode}).toString();
+            window.history.replaceState(null,'',`/ticker/${SERVER_SYMBOL || sym || ""}?${qs}`);
+          } catch(e) {}
+        } catch (e) { appendLog('ERROR: '+e.message); document.getElementById('status').textContent='Error'; try { await fetch('/api/debug/client', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message:'vanna:render_error', status:'error', meta:{error: String(e&&e.message||e)}})}); } catch(_e) {} }
+        finally { isRunning = false; }
+      }
+      function switchToGex() {
+        const sym = document.getElementById('symbol').value.trim().toUpperCase(); if(!sym) return;
+        const spotToggle = document.getElementById('spot_override_toggle');
+        const spot = (spotToggle && spotToggle.checked) ? document.getElementById('spot_override').value.trim() : '';
+        const exp = document.getElementById('h_expiry_sel')?.value || '';
+        const win = document.getElementById('window_input').value || '';
+        const emode = document.getElementById('expiry_mode')?.value || 'current';
+        const effExp = (emode === 'all') ? '' : exp;
+        const qs = new URLSearchParams({symbol:sym, spot:spot, window:win, expiry:effExp, emode, autorun:'1'}).toString();
+        window.location.href = `/gexticker/${SERVER_SYMBOL || sym || ""}?${qs}`;
+      }
+      function switchToVanna() { /* already on Vanna page */ }
+      async function stopRun() { if (!currentJobId) return; await fetch('/api/stop', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({job_id: currentJobId})}); appendLog('Stop requested…'); }
+      async function pollStatus(jobId) {
+        let keep=true; while(keep) {
+          if (jobId !== activeJobId) break;
+          const r = await fetch(`/api/status?job_id=${jobId}`);
+          if(!r.ok) { appendLog('Status poll failed: ' + r.status); break; }
+          const s = await r.json();
+          currentStatus = s.status || 'unknown';
+          haveResult = !!s.has_result;
+          const pct = Math.round((s.progress||0)*100);
+          document.getElementById('bar_sm').style.width = pct+'%';
+          const pctEl2 = document.getElementById('bar_pct'); if(pctEl2) pctEl2.textContent = pct+'%';
+          document.getElementById('status').textContent = s.status;
+          if(s.logs && s.logs.length) { setLogsFromArray(s.logs); }
+          if(s.status==='error') { showError('Job failed. See debug console for details.'); keep=false; }
+          if(s.status==='done') { clearError(); keep=false; }
+          if(s.status==='cancelled') { showError('Job cancelled by user.'); keep=false; }
+          if(keep) await new Promise(r=>setTimeout(r,600));
+        }
+      }
+      function setLastRefreshed(){ const el=document.getElementById('last_refreshed'); if(el) el.textContent=new Date().toLocaleTimeString(); }
+      function updateHeaderMeta(meta) {
+        try {
+          const expiryEl = document.getElementById('h_expiry');
+          const spotEl = document.getElementById('h_spot');
+          const dayEl = document.getElementById('h_day');
+          const ahEl = document.getElementById('h_ah');
+          const refEl = document.getElementById('h_refreshed');
+          const oiEl = document.getElementById('h_oi');
+          const ivEl = document.getElementById('h_iv');
+          if (expiryEl) expiryEl.textContent = (meta && meta.expiry) || (document.getElementById('h_expiry_sel')?.value) || '—';
+          const sp = (meta && meta.spot!=null) ? Number(meta.spot) : null;
+          if (spotEl) spotEl.textContent = (sp!=null && !Number.isNaN(sp)) ? sp.toFixed(2) : '—';
+          let dayTxt = '—';
+          let ahTxt = '—';
+          if (sp!=null && !Number.isNaN(sp)) {
+            // compute day and AH changes if present
+            const dayRef = (meta && meta.prev_close_yest!=null) ? Number(meta.prev_close_yest) : ((meta && meta.prev_close!=null)? Number(meta.prev_close): null);
+            const rthClose = (meta && meta.rth_close!=null) ? Number(meta.rth_close) : null;
+            const ah = (meta && meta.spot_ah!=null) ? Number(meta.spot_ah) : null;
+            if (dayRef!==null && !Number.isNaN(dayRef)) { const dpct = ((sp-dayRef)/dayRef*100.0); dayTxt = (dpct>=0?'+':'') + dpct.toFixed(2) + '%'; }
+            if (ah!==null && rthClose!==null && !Number.isNaN(ah) && !Number.isNaN(rthClose)) {
+              const apct = ((ah-rthClose)/rthClose*100.0); const adel = (ah-rthClose); ahTxt = (apct>=0?'+':'') + apct.toFixed(2) + '% (' + (adel>=0?'+':'') + adel.toFixed(2) + ')';
+            }
+            // back-populate input for quick tweak
+            const inp = document.getElementById('spot_override'); if (inp) inp.value = sp.toFixed(2);
+            const spotToggle = document.getElementById('spot_override_toggle');
+            if (spotToggle) setSpotOverrideEnabled(spotToggle.checked);
+          }
+          if (dayEl) dayEl.textContent = 'Day move ' + dayTxt;
+          if (ahEl) ahEl.textContent = ahTxt;
+          if (refEl) refEl.textContent = (meta && meta.as_of) || '—';
+          const st = (meta && meta.stats) || {};
+          if (oiEl) oiEl.textContent = (st.oi_sum!=null) ? fmtAbbrev(Number(st.oi_sum)||0) : '—';
+          if (ivEl) ivEl.textContent = (st.iv_median!=null) ? Number(st.iv_median).toFixed(2) : '—';
+        } catch(e) {}
+      }
+      async function loadExpiries(sym) {
+        try {
+          const r = await fetch(`/api/expiries?symbol=${encodeURIComponent(sym)}`); if(!r.ok) return;
+          const j = await r.json(); const el = document.getElementById('h_expiry_sel'); if(!el) return; el.innerHTML='';
+          const exps = (j.expiries||[]);
+          if (!exps.length) { const o=document.createElement('option'); o.value=''; o.textContent='No expiries'; o.disabled=true; el.appendChild(o); }
+          else { exps.forEach(e=>{ const o=document.createElement('option'); o.value=e; o.textContent=e; el.appendChild(o); }); }
+          // restore selection if present
+          try { const k='vanna:expiry:'+sym; const sv=localStorage.getItem(k); if(sv && (j.expiries||[]).includes(sv)) el.value=sv; } catch(e) {}
+          if(!el.value && exps.length) el.value = exps[0];
+          el.onchange = ()=>{ try { localStorage.setItem('vanna:expiry:'+sym, el.value); } catch(e) {}; startRun(new Event('submit')); }
+          applyExpiryModeState();
+          // autorun once after expiries are loaded
+          if (!window.__vAutoRan) { window.__vAutoRan = true; startRun(new Event('submit')); }
+        } catch(e) {}
+      }
+      function applyDebugState() {
+        const wrap = document.getElementById('debug_wrap');
+        const title = document.getElementById('dbg_title');
+        const btn = document.getElementById('dbg_toggle');
+        if (wrap) wrap.style.display = debugOpen ? 'block' : 'none';
+        if (title) title.textContent = (debugOpen ? '▾ ' : '▸ ') + 'Debug Console';
+        if (btn) btn.textContent = debugOpen ? 'Hide' : 'Show';
+      }
+      function toggleDebug() {
+        debugOpen = !debugOpen;
+        try { localStorage.setItem('debug:open', debugOpen ? '1' : '0'); } catch(e) {}
+        applyDebugState();
+      }
+
+      function writeClipboard(txt) {
+        try { if (navigator && navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(txt); } catch(e) {}
+        // Fallback for older browsers
+        return new Promise((resolve)=>{
+          const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); } catch(e) {}
+          document.body.removeChild(ta); resolve();
+        });
+      }
+      function positionMenu(el, btnId) { try { const btn=document.getElementById(btnId); if(!btn||!el) return; const r=btn.getBoundingClientRect(); el.style.position='fixed'; el.style.top = (Math.round((r.bottom||60)+10))+'px'; el.style.right = Math.max(12, Math.round(window.innerWidth - r.right) + 12) + 'px'; el.style.zIndex='10000'; } catch(e) {} }
+      function toggleMenu(force) { const el=document.getElementById('menu_panel'); if(!el) return; if(typeof force==='boolean'){ if(force){ positionMenu(el,'menu_btn'); el.style.display='block'; } else { el.style.display='none'; } return; } const show=(el.style.display==='none'||!el.style.display); if(show){ positionMenu(el,'menu_btn'); el.style.display='block'; } else { el.style.display='none'; } }
+      window.addEventListener('resize', ()=>{ const el=document.getElementById('menu_panel'); if(el && el.style.display==='block') positionMenu(el,'menu_btn'); });
+      function setupOutsideClose(panelId, btnId, closerName) {
+        document.addEventListener('click', (e)=>{
+          try {
+            const p = document.getElementById(panelId);
+            const b = document.getElementById(btnId);
+            if(!p) return;
+            if(p.style.display !== 'block') return;
+            const t = e.target;
+            if (p.contains(t) || (b && b.contains(t))) return;
+            if (typeof window[closerName] === 'function') window[closerName](false);
+          } catch(ex) {}
+        });
+      }
+      setupOutsideClose('menu_panel','menu_btn','toggleMenu');
+
+      // Simple events dropdown (next 7 days) as a large popover
+      const EVENTS = [
+        {date:'2025-10-01', title:'FOMC Rate Decision', time:'14:00 ET'},
+        {date:'2025-10-02', title:'Initial Jobless Claims', time:'08:30 ET'},
+      ];
+      function hasUpcomingEvents() {
+        try {
+          const now = new Date(); const week = new Date(now.getTime() + 7*86400000);
+          const rows = (EVENTS||[]).filter(e=>{ const d=new Date(e.date+'T00:00:00Z'); return d>=new Date(now.toDateString()) && d<=week; });
+          return rows.length>0;
+        } catch(e) { return false; }
+      }
+      function getEventButton() { return document.getElementById('ev_btn') || document.getElementById('g_ev_btn'); }
+      function _lsGet(k, defv=null) { try { const v=localStorage.getItem(k); return v? JSON.parse(v): defv; } catch(e){ return defv; } }
+      function _lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} }
+      async function eventsFetch(sym) {
+        const key = 'events:last:' + (sym||'ALL');
+        const cache = _lsGet(key, null);
+        const now = Date.now();
+        if (cache && (now - (cache.ts||0) < 60*1000)) return cache.data;
+        try {
+          const r = await fetch(`/api/events?symbol=${encodeURIComponent(sym||'')}`);
+          if (!r.ok) throw new Error('events fetch failed');
+          const data = await r.json();
+          _lsSet(key, {ts: now, data});
+          return data;
+        } catch(e) {
+          return cache? cache.data: {polygon:[], econ:[]};
+        }
+      }
+      function unseenCount(sym, data) {
+        const seenP = new Set(_lsGet('events:seen:polygon', []));
+        const seenE = new Set(_lsGet('events:seen:econ', []));
+        let u=0; (data.polygon||[]).forEach(a=>{ if(!seenP.has(String(a.id||a.url||a.title))) u++; });
+        (data.econ||[]).forEach(a=>{ if(!seenE.has(String(a.id||a.url||a.title))) u++; });
+        return u;
+      }
+      async function updateEventButtonHighlight() {
+        const btn = getEventButton(); if(!btn) return;
+        const sym = (document.getElementById('symbol')?.value || document.getElementById('g_symbol')?.value || '').trim().toUpperCase();
+        const data = await eventsFetch(sym);
+        const unseen = unseenCount(sym, data);
+        btn.className = 'btn ' + (unseen>0 ? 'primary' : 'secondary');
+      }
+      function econUrlForDate(d) { return `https://finance.yahoo.com/calendar/economic?from=${d}&to=${d}`; }
+      function ensureEventPanel() {
+        let el = document.getElementById('events_panel');
+        if (!el) {
+          el = document.createElement('div'); el.id = 'events_panel';
+          el.className = 'card';
+          el.style.cssText='position:fixed; z-index:100; width:min(900px, 54vw); max-width:95vw; max-height:72vh; overflow:auto; box-shadow:0 8px 24px rgba(0,0,0,.6)';
+          document.body.appendChild(el);
+        }
+        return el;
+      }
+      function positionEventPanel(el) {
+        const btn = getEventButton(); if(!btn) return;
+        const r = btn.getBoundingClientRect();
+        const top = Math.round((r.bottom || 60) + 10);
+        const right = Math.max(12, Math.round(window.innerWidth - r.right) + 12);
+        el.style.top = top + 'px';
+        el.style.right = right + 'px';
+        el.style.left = '';
+      }
+      async function toggleEvents() { const el = ensureEventPanel(); const show = (el.style.display==='none' || !el.style.display); if (show) { await renderEvents(el); positionEventPanel(el); el.style.display='block'; } else { el.style.display='none'; } }
+      async function renderEvents(el) {
+        try {
+          const sym = (document.getElementById('symbol')?.value || document.getElementById('g_symbol')?.value || '').trim().toUpperCase();
+          const data = await eventsFetch(sym);
+          let html = `<div style='display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#111827;padding-bottom:6px'><h3 style='margin:0'>Events & News</h3><button class='btn secondary' onclick="toggleEvents()">Close</button></div>`;
+          function renderSection(title, arr) {
+            const items = (arr||[]).map(a=>{ const t=a.title||''; const url=a.url||'#'; const ts=a.published||''; return `<div style='margin:10px 0'><a href='${url}' target='_blank' rel='noopener' style='color:#93c5fd;text-decoration:none;font-weight:600'>${t}</a> <span class='muted'>— ${ts}</span></div>`; }).join('');
+            return `<div class='card' style='margin-top:10px'><h4 style='margin:0 0 6px 0'>${title}</h4>${items || `<span class='muted'>None</span>`}</div>`;
+          }
+          html += renderSection('Ticker News (Massive)', data.polygon);
+          html += renderSection('Economic News', data.econ);
+          // Upcoming economic events FYI (static list)
+          try {
+            const rows = (EVENTS||[]).map(e=> `<div style='margin:6px 0'><strong>${e.title}</strong> <span class='muted'>— ${e.date} ${e.time||''}</span></div>`).join('');
+            html += `<div class='card' style='margin-top:10px'><h4 style='margin:0 0 6px 0'>Upcoming Economic Events (FYI)</h4>${rows||`<span class='muted'>None</span>`}</div>`;
+          } catch(e) {}
+          el.innerHTML = html;
+          // mark as seen
+          const seenP = new Set(_lsGet('events:seen:polygon', []));
+          const seenE = new Set(_lsGet('events:seen:econ', []));
+          const idsP = (data.polygon||[]).map(a=> String(a.id||a.url||a.title));
+          const idsE = (data.econ||[]).map(a=> String(a.id||a.url||a.title));
+          idsP.forEach(id=> seenP.add(id)); idsE.forEach(id=> seenE.add(id));
+          _lsSet('events:seen:polygon', Array.from(seenP));
+          _lsSet('events:seen:econ', Array.from(seenE));
+          try { fetch('/api/events/ack', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({seen:{polygon: idsP, econ: idsE}})}); } catch(e) {}
+          // update button highlight
+          updateEventButtonHighlight();
+        } catch(e) { el.innerHTML = '<div class=muted>Error loading events</div>'; }
+      }
+      window.addEventListener('resize', ()=>{ const el=document.getElementById('events_panel'); if(el && el.style.display==='block') positionEventPanel(el); });
+
+      // Formatting helper for compact units
+      function fmtAbbrev(n) { const s=Math.sign(n||0),v=Math.abs(n||0); if(v>=1e12) return (s*v/1e12).toFixed(2)+'T'; if(v>=1e9) return (s*v/1e9).toFixed(2)+'B'; if(v>=1e6) return (s*v/1e6).toFixed(2)+'M'; if(v>=1e3) return (s*v/1e3).toFixed(2)+'K'; return (s*v).toFixed(0); }
+      function updateVannaSeries(sym, net) {
+        try { const k='vanna:series:'+sym; const now=Date.now(); let arr=JSON.parse(localStorage.getItem(k)||'[]'); if(!Array.isArray(arr)) arr=[]; arr.push({ts:now, net: Number(net)||0}); if(arr.length>20) arr=arr.slice(-20); localStorage.setItem(k, JSON.stringify(arr)); } catch(e) {}
+      }
+
+      async function copyPairs() {
+        if(!currentJobId) { appendLog('No job to export'); return; }
+        try {
+          const r = await fetch(`/api/export/pairs?job_id=${currentJobId}`);
+          if(!r.ok) throw new Error('Export failed');
+          const j = await r.json();
+          await writeClipboard(j.pairs||'');
+          appendLog('Copied TV pairs to clipboard');
+        } catch(e) { appendLog('ERROR export pairs: '+e.message); }
+      }
+
+      async function copyPine() {
+        if(!currentJobId) { appendLog('No job to export'); return; }
+        try {
+          const r = await fetch(`/api/export/pine?job_id=${currentJobId}`);
+          if(!r.ok) throw new Error('Export failed');
+          const j = await r.json();
+          await writeClipboard(j.pine||'');
+          appendLog('Copied Pine script to clipboard');
+        } catch(e) { appendLog('ERROR export pine: '+e.message); }
+      }
+      function showError(msg) { const el=document.getElementById('error_banner'); if(!el) return; el.textContent=msg||'Error'; el.style.display='block'; }
+      function clearError() { const el=document.getElementById('error_banner'); if(!el) return; el.textContent=''; el.style.display='none'; }
+      function scheduleRefreshFromSelect(){
+        if (refreshTimer) { clearInterval(refreshTimer); refreshTimer=null; }
+        const sel = document.getElementById('autorefresh');
+        const val = parseInt(sel.value,10) || 0;
+        try { localStorage.setItem('vanna:auto', String(val)); } catch(e) {}
+        if (val>0) {
+          refreshTimer = setInterval(()=>{ const s=document.getElementById('symbol').value.trim(); if(s && !isRunning) startRun(new Event('submit')); }, val*1000);
+        }
+      }
+      async function waitForResult(jobId) {
+        const startTs = Date.now();
+        while(true) {
+          if (jobId !== activeJobId) throw new Error('Superseded by a new run');
+          const st = await fetch(`/api/status?job_id=${jobId}`);
+          if(!st.ok) throw new Error('Status fetch failed');
+          const s = await st.json();
+          const status = s.status || 'unknown';
+          if (status==='error') throw new Error('Job error');
+          if (status==='cancelled') throw new Error('Job cancelled');
+          const r = await fetch(`/api/result?job_id=${jobId}`);
+          if (r.status!==204) { if(!r.ok) throw new Error('Failed fetching result'); return await r.json(); }
+          if (Date.now()-startTs > 180000) throw new Error('Timeout waiting for result');
+          await new Promise(r=>setTimeout(r,500));
+        }
+      }
+      function applySymbolPresets() {
+        const sym = document.getElementById('symbol').value.trim().toUpperCase();
+        if(sym.startsWith('SPX') && !windowDirty) {
+          const el = document.getElementById('window_input');
+          const v = parseFloat(el.value||'10');
+          if(!v || v>4) el.value = '3';
+        }
+      }
+      function renderCharts(d) {
+        const x=d.strikes||[], vnet=(d.vanna_net||[]).map(Number), vc=(d.vanna_calls||[]).map(Number), vp=(d.vanna_puts||[]).map(Number);
+        updateHeaderMeta(d.meta||{});
+        // metrics + timeseries
+        try {
+          const sym = (d.meta && d.meta.symbol) || document.getElementById('symbol')?.value?.trim()?.toUpperCase() || '';
+          const net = vnet.reduce((a,b)=>a+(b||0),0);
+          const k = 'vanna:series:'+sym; let prev=null; try { const arr = JSON.parse(localStorage.getItem(k)||'[]'); if(Array.isArray(arr) && arr.length) prev = arr[arr.length-1].net; } catch(e) {}
+          const delta = (prev!==null && prev!==undefined) ? (net - prev) : null;
+          const st = (d.meta && d.meta.stats) || {};
+          const oi = (st.oi_sum!=null)? fmtAbbrev(Number(st.oi_sum)||0): null;
+          const iv = (st.iv_median!=null)? Number(st.iv_median).toFixed(2): null;
+          const netEl = document.getElementById('h_net'); if (netEl) netEl.textContent = fmtAbbrev(net);
+          const deltaEl = document.getElementById('h_net_delta');
+          if (deltaEl) deltaEl.textContent = (delta===null) ? 'Δ vs last —' : ('Δ vs last ' + (delta>=0?'+':'') + fmtAbbrev(Math.abs(delta)));
+          const oiEl = document.getElementById('h_oi'); if (oiEl && oi!==null) oiEl.textContent = oi;
+          const ivEl = document.getElementById('h_iv'); if (ivEl && iv!==null) ivEl.textContent = iv;
+          updateVannaSeries(sym, net);
+        } catch(e) {}
+        const gridcolor='#1f2937';
+        // Autoscale small magnitudes for readability
+        const absmax = Math.max(1e-12, ...vnet.map(v=>Math.abs(v)), ...vc.map(v=>Math.abs(v)), ...vp.map(v=>Math.abs(v)));
+        let factor = 1, suffix='';
+        const scales = [1, 1e3, 1e6, 1e9];
+        for (const f of scales) { if (absmax*f >= 1 && absmax*f < 1000) { factor = f; break; } }
+        if (factor===1e3) suffix = ' (×1e3)'; else if (factor===1e6) suffix=' (×1e6)'; else if (factor===1e9) suffix=' (×1e9)';
+        const ynet = vnet.map(v=>v*factor), yvc = vc.map(v=>v*factor), yvp = vp.map(v=>v*factor);
+        // Chart A: stacked calls vs puts with net overlay + hoverable vertical lines
+        const spot = (d.meta && Number(d.meta.spot)) || null;
+        const spotAH = (d.meta && Number(d.meta.spot_ah)) || null;
+        const dayRef = (d.meta && d.meta.prev_close_yest!=null) ? Number(d.meta.prev_close_yest) : ((d.meta && d.meta.prev_close!=null) ? Number(d.meta.prev_close) : null);
+        const rthClose = (d.meta && d.meta.rth_close!=null) ? Number(d.meta.rth_close) : null;
+        const yMinA = Math.min(0, ...yvc, ...yvp, ...ynet);
+        const yMaxA = Math.max(0, ...yvc, ...yvp, ...ynet);
+        const extraA = [];
+        if (spot) {
+          const pct = (dayRef? ((spot-dayRef)/dayRef*100.0) : null);
+          const txt = 'Spot: ' + spot.toFixed(2) + (pct==null?'':(' (' + (pct>=0?'+':'') + pct.toFixed(2) + '%)'));
+          extraA.push({x:[spot,spot], y:[yMinA,yMaxA], type:'scatter', mode:'lines', name:'Spot', hoverinfo:'text', text:[txt,txt], line:{color:'#ffffff', width:1, dash:'dot'}, showlegend:false});
+        }
+        if (spotAH) {
+          const pct = (rthClose? ((spotAH-rthClose)/rthClose*100.0) : null);
+          const delta = (rthClose? (spotAH-rthClose) : null);
+          let txt = 'After-hours: ' + spotAH.toFixed(2);
+          if (pct!=null) txt += ' (' + (pct>=0?'+':'') + pct.toFixed(2) + '%';
+          if (delta!=null) txt += ', ' + (delta>=0?'+':'') + delta.toFixed(2) + ')';
+          extraA.push({x:[spotAH,spotAH], y:[yMinA,yMaxA], type:'scatter', mode:'lines', name:'After-hours', hoverinfo:'text', text:[txt,txt], line:{color:'#d2b48c', width:1, dash:'dot'}, opacity:0.8, showlegend:false});
+        }
+        // Chart A bars only (no connecting Net line)
+        Plotly.newPlot('chart_net', [{x, y:yvc, type:'bar', name:'Calls'}, {x, y:yvp, type:'bar', name:'Puts'}].concat(extraA), {
+          barmode:'relative', paper_bgcolor:'#111827', plot_bgcolor:'#111827',
+          xaxis:{title:'Strike', gridcolor}, yaxis:{title:'Vanna'+suffix, gridcolor, autorange:true}, margin:{t:20}
+        }, {displayModeBar:false});
+        // Chart B: accumulated net vanna (cumulative sum)
+        let csum = [];
+        let acc = 0; for (let i=0;i<ynet.length;i++) { acc += (ynet[i]||0); csum.push(acc); }
+        const yMinB = Math.min(0, ...csum);
+        const yMaxB = Math.max(0, ...csum);
+        const extraB = [];
+        if (spot) {
+          const pct = (dayRef? ((spot-dayRef)/dayRef*100.0) : null);
+          const txt = 'Spot: ' + spot.toFixed(2) + (pct==null?'':(' (' + (pct>=0?'+':'') + pct.toFixed(2) + '%)'));
+          extraB.push({x:[spot,spot], y:[yMinB,yMaxB], type:'scatter', mode:'lines', name:'Spot', hoverinfo:'text', text:[txt,txt], line:{color:'#ffffff', width:1, dash:'dot'}, showlegend:false});
+        }
+        if (spotAH) {
+          const pct = (rthClose? ((spotAH-rthClose)/rthClose*100.0) : null);
+          const delta = (rthClose? (spotAH-rthClose) : null);
+          let txt = 'After-hours: ' + spotAH.toFixed(2);
+          if (pct!=null) txt += ' (' + (pct>=0?'+':'') + pct.toFixed(2) + '%';
+          if (delta!=null) txt += ', ' + (delta>=0?'+':'') + delta.toFixed(2) + ')';
+          extraB.push({x:[spotAH,spotAH], y:[yMinB,yMaxB], type:'scatter', mode:'lines', name:'After-hours', hoverinfo:'text', text:[txt,txt], line:{color:'#d2b48c', width:1, dash:'dot'}, opacity:0.8, showlegend:false});
+        }
+        Plotly.newPlot('chart_split', [{x, y:csum, type:'scatter', mode:'lines+markers', name:'Accumulated'}].concat(extraB), {
+          paper_bgcolor:'#111827', plot_bgcolor:'#111827',
+          xaxis:{title:'Strike', gridcolor}, yaxis:{title:'Accumulated Net Vanna'+suffix, gridcolor, autorange:true}, margin:{t:20}
+        }, {displayModeBar:false});
+      }
+      // cache helpers for Vanna
+      function saveVannaCache(sym, params, data, metrics) {
+        try { localStorage.setItem('vanna:cache:'+sym, JSON.stringify({ts:Date.now(), params, data, metrics: (metrics||{})})); } catch(e) {}
+      }
+      function loadVannaCache(sym) { try { return JSON.parse(localStorage.getItem('vanna:cache:'+sym)||'null'); } catch(e) { return null; } }
+      function getVannaAutoSecs() { const el=document.getElementById('autorefresh'); const v=parseInt(el?.value||'0',10); return isNaN(v)?0:v; }
+      function maybePreloadVannaFromCache() {
+        const sym = document.getElementById('symbol').value.trim().toUpperCase(); if(!sym) return;
+        const ttlSec = getVannaAutoSecs(); if(ttlSec<=0) return;
+        const c = loadVannaCache(sym);
+        if(!c) { window.__clientCacheMsg = `Cache miss: ${SERVER_SYMBOL || sym || ""} (no cached result)`; window.__preludeLogs = [window.__clientCacheMsg]; appendLog(window.__clientCacheMsg); return; }
+        const ageMs = Date.now() - (c.ts||0);
+        if (ageMs <= ttlSec*1000) {
+          const prev = (c.metrics && typeof c.metrics.dur_ms !== 'undefined') ? String((c.metrics.dur_ms||0).toFixed ? c.metrics.dur_ms.toFixed(0) : c.metrics.dur_ms) : 'n/a';
+          window.__clientCacheMsg = `Cache hit: ${SERVER_SYMBOL || sym || ""} age=${(ageMs/1000).toFixed(1)}s; prev runtime=${prev} ms`;
+          window.__preludeLogs = [window.__clientCacheMsg];
+          appendLog(window.__clientCacheMsg);
+          try { renderCharts(c.data||{}); } catch(e) {}
+        } else {
+          window.__clientCacheMsg = `Cache stale: ${SERVER_SYMBOL || sym || ""} age=${(ageMs/1000).toFixed(1)}s > TTL=${ttlSec}s`;
+          window.__preludeLogs = [window.__clientCacheMsg];
+          appendLog(window.__clientCacheMsg);
+        }
+      }
+      // appendLog implemented above to update the debug console
+      document.addEventListener('DOMContentLoaded', ()=>{
+        const s = document.getElementById('symbol').value.trim();
+        // ensure symbol from path if missing
+        try { if(!s) { const m = (location.pathname||'').match(/\/ticker\/(.+)$/); if(m && m[1]) document.getElementById('symbol').value = decodeURIComponent(m[1]); } } catch(e) {}
+        // Apply URL query overrides for consistency when switching views
+        try {
+          const url = new URL(window.location.href);
+          const qspot = url.searchParams.get('spot');
+          if(qspot!==null && String(qspot).trim() !== ''){
+            const spotEl = document.getElementById('spot_override'); if(spotEl) spotEl.value = qspot;
+            vSpotFromUrl = true;
+            const box = document.getElementById('spot_override_toggle'); if(box) box.checked = true;
+          }
+          const qwin = url.searchParams.get('window'); if(qwin!==null) { document.getElementById('window_input').value = qwin; vWindowFromUrl = true; }
+          const qemode = url.searchParams.get('emode'); if(qemode) { const el=document.getElementById('expiry_mode'); if(el) el.value=qemode; }
+          const qweight = url.searchParams.get('weight'); if(qweight) { const wEl=document.querySelector(`input[name=weight][value='${qweight}']`); if(wEl) wEl.checked=true; }
+        } catch(e) {}
+        const symNow = (document.getElementById('symbol').value||'').trim();
+        if(symNow) loadExpiries(symNow);
+        try { const saved = localStorage.getItem('vanna:auto'); if(saved !== null) document.getElementById('autorefresh').value = saved; } catch(e) {}
+        // per-ticker window persistence
+        try { const sym = (document.getElementById('symbol').value||'').trim().toUpperCase(); const winSaved = localStorage.getItem('vanna:window:'+sym) || localStorage.getItem('vanna:window'); if(winSaved !== null && !vWindowFromUrl) document.getElementById('window_input').value = winSaved; } catch(e) {}
+        document.getElementById('window_input').addEventListener('input', ()=>{ windowDirty=true; try { localStorage.setItem('vanna:window', document.getElementById('window_input').value); } catch(e) {} });
+        document.getElementById('window_input').addEventListener('change', ()=>{ try { const sym=(document.getElementById('symbol').value||'').trim().toUpperCase(); localStorage.setItem('vanna:window:'+sym, document.getElementById('window_input').value); } catch(e) {} });
+        try { const box=document.getElementById('spot_override_toggle'); if(box){ box.addEventListener('change', ()=>setSpotOverrideEnabled(box.checked)); setSpotOverrideEnabled(box.checked || vSpotFromUrl); } } catch(e) {}
+        document.getElementById('symbol').addEventListener('input', applySymbolPresets);
+        // persist weight
+        try { const wf = localStorage.getItem('vanna:weight'); if(wf) { const wEl = document.querySelector(`input[name=weight][value='${wf}']`); if(wEl) wEl.checked = true; } } catch(e) {}
+        for (const el of document.querySelectorAll('input[name=weight]')) { el.addEventListener('change', ()=>{ try { localStorage.setItem('vanna:weight', el.value); } catch(e) {} }); }
+        // persist expiry mode (default to current if unset)
+        try {
+          const el = document.getElementById('expiry_mode');
+          const saved = localStorage.getItem('vanna:emode');
+          if (el) {
+            if (saved) el.value = saved; else { el.value = el.value || 'current'; localStorage.setItem('vanna:emode', el.value); }
+            el.addEventListener('change', ()=>{ try { localStorage.setItem('vanna:emode', el.value); } catch(e) {} applyExpiryModeState(); });
+          }
+        } catch(e) {}
+        // Bind once (defensive) in case inline onsubmit isn't firing
+        try { document.getElementById('runForm').addEventListener('submit', startRun); } catch(e) {}
+        // apply persisted debug open state
+        try { const d = localStorage.getItem('debug:open'); if(d!==null) debugOpen = (d==='1'); } catch(e) {}
+        applyDebugState();
+        updateEventButtonHighlight();
+        appendLog('UI ready');
+        applySymbolPresets();
+        applyExpiryModeState();
+        scheduleRefreshFromSelect();
+        // Preload from cache if fresh
+        maybePreloadVannaFromCache();
+        // autorun happens in loadExpiries once options are populated
+      });
+    </script>
+    
+{% endblock %}

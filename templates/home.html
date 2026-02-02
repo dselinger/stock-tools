@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<style>
+  .home-wrap{width:min(900px,90vw);margin:0 auto;display:flex;flex-direction:column;gap:16px}
+  @media(min-width:1200px){.home-wrap{width:50vw;max-width:50vw}}
+  .home-grid{display:grid;grid-template-columns:240px 1fr;gap:14px;align-items:start}
+  @media(max-width:960px){.home-grid{grid-template-columns:1fr}}
+  .home-card{padding:22px}
+  .home-card .card-title{margin-bottom:12px}
+  .home-card .card-subtext{margin-bottom:14px}
+  .tool-card .tool-btn{width:100%;text-align:center;font-weight:700}
+  .tool-card .tool-btn + .tool-btn{margin-top:10px}
+  .tool-card .tool-btn.debug-tool{margin-top:100px}
+  .tool-btn.active{background:#1e3a8a;color:#e0f2fe;box-shadow:0 6px 18px rgba(30,58,138,0.35);transform:translateY(-1px)}
+  .options-card{display:flex;flex-direction:column;gap:16px}
+  .options-card .form-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:14px;align-items:center}
+  .options-card .form-row input[type=text]{width:140px}
+  .options-card .suffix-input{position:relative;display:inline-flex;align-items:center;width:100px}
+  .options-card .suffix-input input{width:100%;padding-right:26px}
+  .options-card .suffix-input .suffix{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:0.9rem;pointer-events:none}
+  .fav-row{display:flex;flex-wrap:wrap;gap:10px}
+  .home-chip-note{margin-top:6px}
+  .home-footer{margin-top:18px;text-align:center;color:#94a3b8;font-size:0.9rem}
+  .card-section{border-top:1px solid #1f2937;padding-top:10px;margin-top:4px}
+  .tool-card{height:100%;min-height:240px;display:flex;flex-direction:column}
+  .tool-card .muted{margin-top:auto}
+</style>
+{% endblock %}
+{% block content %}
+<div class="home-wrap">
+  <div class="page-head" style="margin-bottom:12px">
+    <div class="head-titles">
+      <h1 style="margin:0">Dave's Stock Tools</h1>
+      <div class="head-desc">Pick a tool, search a ticker, or jump to your saved favorites.</div>
+    </div>
+    <div class="head-actions">
+      <button type="button" class="btn secondary" id="demo_toggle_btn">Demo Mode</button>
+    </div>
+  </div>
+
+  <div class="home-grid">
+    <div class="card tool-card home-card">
+      <div class="card-title">Select a Tool</div>
+      <button class="btn secondary tool-btn active" data-tool="search" onclick="setTool('search')">Search</button>
+      <button class="btn secondary tool-btn" data-tool="scanner" onclick="setTool('scanner')">Scanner</button>
+      <a href="/debug" class="btn secondary tool-btn debug-tool">Debug Console</a>
+    </div>
+    <div class="card options-card home-card" id="options_card">
+      <div>
+        <div class="card-title" id="options_title">Search Options</div>
+        <div class="muted-small card-subtext">Ticker and window size</div>
+        <div class="form-row">
+          <input type="text" id="h_symbol" placeholder="Ticker (e.g. SPX, NVDA)">
+          <div class="suffix-input">
+            <input type="number" id="h_window" class="num" value="10" min="0.01" max="50" step="0.5">
+            <span class="suffix">%</span>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+          <button class="btn primary" type="button" onclick="openFromOptions()" id="open_btn">Open</button>
+          <button class="btn secondary" type="button" onclick="addFromSearch()">Add to Favorites</button>
+        </div>
+      </div>
+      <div class="card-section">
+        <div class="card-title" style="margin-bottom:8px">Favorites</div>
+        <div id="fav_list" class="fav-row"></div>
+        <div class="muted-small home-chip-note">Saved tickers mirror the Gamma Scanner list (including window sizes).</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="home-footer" id="home_footer">© Dave's Stock Tools — v0.1.0</div>
+</div>
+
+<div id="home_defaults" data-json='{{ favs_json | tojson | safe }}' hidden></div>
+<div id="home_demo_state" data-enabled="{{ 'true' if demo_mode_enabled else 'false' }}" data-default="{{ 'true' if demo_mode_default else 'false' }}" hidden></div>
+<script>
+  const SCAN_KEY = 'vanna:scanner';
+  const DEFAULT_WIN = 10;
+  function parseDefaultTickers(){
+    try{
+      const raw = document.getElementById('home_defaults')?.dataset.json || '[]';
+      const parsed = JSON.parse(raw);
+      if(Array.isArray(parsed)) return parsed.map(s=>({symbol:String(s).toUpperCase(), window:DEFAULT_WIN}));
+      if(typeof parsed === 'string'){
+        const inner = JSON.parse(parsed);
+        if(Array.isArray(inner)) return inner.map(s=>({symbol:String(s).toUpperCase(), window:DEFAULT_WIN}));
+      }
+    }catch(e){}
+    return [];
+  }
+  function normalizeTickers(list){
+    return (list||[]).map(t=>{
+      if(typeof t === 'string'){ return {symbol:t.toUpperCase(), window:DEFAULT_WIN}; }
+      const sym = (t.symbol||t||'').toString().toUpperCase().trim();
+      if(!sym) return null;
+      const w = Number(t.window);
+      const win = (Number.isFinite(w) && w>0) ? w : DEFAULT_WIN;
+      return {symbol:sym, window:win};
+    }).filter(Boolean);
+  }
+  function loadFavorites(){
+    let saved = null;
+    try{ saved = JSON.parse(localStorage.getItem(SCAN_KEY)||'null'); }catch(e){}
+    if(saved && Array.isArray(saved.tickers)) return normalizeTickers(saved.tickers);
+    if(Array.isArray(saved)) return normalizeTickers(saved);
+    return normalizeTickers(parseDefaultTickers());
+  }
+  function persistFavorites(){
+    try{ localStorage.setItem(SCAN_KEY, JSON.stringify({tickers:favorites})); }catch(e){}
+  }
+  let favorites = loadFavorites();
+  function renderFavorites(){
+    const wrap = document.getElementById('fav_list');
+    if(!wrap) return;
+    if(!favorites.length){ wrap.innerHTML = '<div class="empty-hint">Add favorites from Search.</div>'; return; }
+    wrap.innerHTML = favorites.map(f=>{
+      const sym = f.symbol;
+      const win = Number(f.window)||DEFAULT_WIN;
+      return `<span class="scan-chip"><span><a href="/gexticker/${encodeURIComponent(sym)}?window=${encodeURIComponent(win)}" style="color:inherit;text-decoration:none">${sym}</a></span>
+        <input type="number" value="${win}" min="0.01" max="50" step="0.5" style="width:70px;padding:4px;border-radius:6px;border:1px solid #1f2937;background:#0f172a;color:#e5e7eb" onchange="updateFavoriteWindow('${sym}', this.value)">
+        <button title="Remove" onclick="removeFavorite('${sym}')">×</button></span>`;
+    }).join('');
+  }
+  function updateFavoriteWindow(sym, val){
+    favorites = favorites.map(t=> t.symbol===sym ? {symbol:sym, window:(Number(val)>0?Number(val):DEFAULT_WIN)} : t);
+    persistFavorites();
+  }
+  function removeFavorite(sym){
+    favorites = favorites.filter(t=> t.symbol!==sym);
+    persistFavorites();
+    renderFavorites();
+  }
+  function addFromSearch(){
+    const symEl=document.getElementById('h_symbol');
+    const winEl=document.getElementById('h_window');
+    const sym=(symEl?.value||'').toUpperCase().trim();
+    const win=Number(winEl?.value||DEFAULT_WIN);
+    if(!sym) return;
+    if(!favorites.find(f=>f.symbol===sym)){
+      favorites.push({symbol:sym, window:(win>0?win:DEFAULT_WIN)});
+    } else {
+      favorites = favorites.map(f=> f.symbol===sym ? {symbol:sym, window:(win>0?win:DEFAULT_WIN)} : f);
+    }
+    persistFavorites();
+    renderFavorites();
+  }
+  function openSearch(){
+    const symEl=document.getElementById('h_symbol');
+    const winEl=document.getElementById('h_window');
+    const sym=(symEl?.value||'').toUpperCase().trim();
+    const win=winEl ? (winEl.value||'') : '';
+    if(!sym){ alert('Enter a ticker to open.'); return; }
+    const qs = win ? ('?window='+encodeURIComponent(win)) : '';
+    window.location.href = '/gexticker/' + encodeURIComponent(sym) + qs;
+  }
+  function openScanner(){
+    persistFavorites();
+    window.location.href = '/scanner';
+  }
+  let activeTool = 'search';
+  function applyToolState(){
+    const title = document.getElementById('options_title');
+    const btns=document.querySelectorAll('.tool-btn');
+    btns.forEach(b=>{ const isActive=b.dataset.tool===activeTool; b.classList.toggle('active', isActive); });
+    if(title) title.textContent = activeTool==='search' ? 'Search Options' : 'Scanner Options';
+  }
+  function setTool(tool){
+    activeTool = tool;
+    applyToolState();
+  }
+  function openFromOptions(){
+    if(activeTool==='search'){ openSearch(); }
+    else { openScanner(); }
+  }
+  const demoStateEl = document.getElementById('home_demo_state');
+  let demoEnabled = (demoStateEl?.dataset.enabled === 'true');
+  function renderDemoMode(){
+    const btn = document.getElementById('demo_toggle_btn');
+    if(btn){
+      btn.textContent = demoEnabled ? 'Demo Mode: On' : 'Demo Mode: Off';
+      btn.style.background = demoEnabled ? '#0f2f22' : '#1f2937';
+      btn.style.color = demoEnabled ? '#34d399' : '#e5e7eb';
+      btn.title = demoEnabled
+        ? 'Serving bundled sample data. Toggle off to call Massive (Polygon) with your API key.'
+        : 'Live mode. Toggle on to use built-in demo data if keys are missing.';
+    }
+  }
+  async function toggleDemoMode(){
+    const btn = document.getElementById('demo_toggle_btn');
+    const next = !demoEnabled;
+    if(btn) btn.disabled = true;
+    try{
+      const res = await fetch('/api/demo-mode', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enabled: next})});
+      if(!res.ok) throw new Error('Toggle failed');
+      const data = await res.json();
+      demoEnabled = !!data.enabled;
+      renderDemoMode();
+    }catch(e){
+      alert('Could not toggle demo mode: ' + (e?.message || e));
+    }finally{
+      if(btn) btn.disabled = false;
+    }
+  }
+  try{
+    const btn = document.getElementById('demo_toggle_btn');
+    if(btn) btn.addEventListener('click', toggleDemoMode);
+  }catch(e){}
+  renderFavorites();
+  renderDemoMode();
+  applyToolState();
+  (function setYearFooter(){
+    try{
+      const y = new Date().getFullYear();
+      const footer = document.getElementById('home_footer');
+      if(footer) footer.textContent = `© ${y} Dave's Stock Tools — v0.1.0`;
+    }catch(e){}
+  })();
+</script>
+{% endblock %}

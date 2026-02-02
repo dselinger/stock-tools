@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="events_root" data-symbol="{{ symbol }}" style="display:flex;align-items:center;gap:12px;">
+  <a href="/" class="home-link" aria-label="Home">&#8962;</a>
+  <a href="/ticker/{{ symbol }}" class="muted">Vanna</a>
+  <a href="/gexticker/{{ symbol }}" class="muted">GEX</a>
+  <h2 style="margin:0">{{ symbol }} — Ticker Events</h2>
+</div>
+<div class="card" style="margin-top:10px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+    <div class="muted">Massive News</div>
+    <button class="btn secondary" onclick="loadTickerEvents()">Refresh</button>
+  </div>
+  <div id="t_events" class="logs full" style="white-space:normal">{{ ssr_html | safe }}</div>
+</div>
+<script>
+  const EVENT_SYMBOL = (document.getElementById("events_root")?.dataset.symbol) || "";
+    function _esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\"/g,'&quot;').replace(/'/g,'&#39;'); }
+  function domainFromUrl(u) { try { return new URL(u).hostname.replace(/^www\./,''); } catch(e) { return ''; } }
+  function fmtPST(ts) { try { const d = new Date(ts); const f = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false }); const parts = f.formatToParts(d); const obj = Object.fromEntries(parts.map(p=>[p.type,p.value])); const tz = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', timeZoneName: 'short' }).formatToParts(d).find(p=>p.type==='timeZoneName')?.value || 'PT'; return `${obj.year}-${obj.month}-${obj.day} ${obj.hour}:${obj.minute} ${tz}`; } catch(e) { return _esc(String(ts||'')); } }
+  async function loadTickerEvents() {
+    const el = document.getElementById('t_events');
+    if (el) el.textContent = 'Loading…';
+    try {
+      const r = await fetch('/api/events?symbol='+(EVENT_SYMBOL||'')+'&nocache=1');
+      if(!r.ok) { if(el) el.textContent = 'Error '+r.status; return; }
+      const j = await r.json();
+      const arr = (Array.isArray(j.polygon) ? j.polygon : []).slice(0,15);
+      if(el) {
+        if(arr.length) {
+          const rows = arr.map(a=> {
+            const t=_esc(a.title||''); const u=_esc(a.url||a.article_url||'#'); const p=_esc(a.published||'');
+            const dom = domainFromUrl(u); const when = fmtPST(p);
+            const meta = (dom||when) ? ` <span class="muted">— (${_esc(dom)}) -- ${_esc(when)}</span>` : '';
+            return `<li><a href="${u}" target="_blank" rel="noopener">${t}</a>${meta}` + `</li>`;
+          }).join('');
+          el.innerHTML = `<ul>${rows}</ul>`;
+        } else { el.innerHTML = '<div class="muted">(no recent news)</div>'; }
+      }
+    } catch(e) {
+      if(el) el.textContent = 'Error loading';
+    }
+  }
+  try { document.getElementById('t_events').textContent = 'Loading…'; } catch(e) {}
+  loadTickerEvents();
+  document.addEventListener('DOMContentLoaded', ()=>{ try { loadTickerEvents(); } catch(e) {} setTimeout(()=>{ try { loadTickerEvents(); } catch(e) {} }, 500); });
+  </script>
+{% endblock %}

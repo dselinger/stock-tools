@@ -1,0 +1,658 @@
+{% extends 'base.html' %}
+{% block content %}
+
+    <div class="page-head">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <a href='/' class='home-link' aria-label='Home'>&#8962;</a>
+        <div class="head-titles">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <h2 id="gh_symbol" data-symbol="{{ symbol }}" style="margin:0">{{ symbol or 'Ticker' }} — GEX</h2>
+            <span class="head-chip">GEX</span>
+          </div>
+          <div class="head-desc" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <label class="muted" for="gh_expiry_sel">Expiry</label>
+            <select id="gh_expiry_sel" class="select-input select-sm"></select>
+            <label class="muted" for="g_expiry_mode">Scope</label>
+            <select id="g_expiry_mode" class="select-input select-sm">
+              <option value="current" selected>Current expiration</option>
+              <option value="all">All expirations</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="head-actions" style="position:relative"> 
+        <button class="btn secondary" id="g_menu_btn" type="button" style="position:relative; z-index:10001;" onclick="gToggleMenu()">☰</button>
+        <div id="g_menu_panel" class="card" style="display:none;position:fixed;right:24px;top:68px;min-width:240px;padding:8px; z-index:10000;"> 
+          <div><button class="btn secondary" style="width:100%" onclick="gSwitchToVanna(); gToggleMenu(false);">Vanna</button></div>
+          <div style="margin-top:6px"><a class="btn secondary" style="width:100%;display:block;text-align:center" href="/events/{{ symbol }}" target="_blank" rel="noopener" onclick="gToggleMenu(false);">{{ symbol or 'Ticker' }} Events</a></div>
+          <div style="margin-top:6px"><a class="btn secondary" style="width:100%;display:block;text-align:center" href="/econ" onclick="gToggleMenu(false);">Economic Events</a></div>
+          <div class="muted" style="margin:8px 0 4px 0;border-top:1px solid #334155;padding-top:6px">TradingView</div>
+          <div><button class="btn secondary" style="width:100%" onclick="gCopyPairs(); gToggleMenu(false);">Pairs</button></div>
+          <div style="margin-top:6px"><button class="btn secondary" style="width:100%" onclick="gCopyPine(); gToggleMenu(false);">Pine</button></div>
+        </div>
+      </div>
+    </div>
+
+<div id="gex_controls" style="margin-top:12px">
+  <form id="gexForm" onsubmit="startGex(event)" class="ticker-form">
+    <div class="options-grid" style="display:flex;gap:18px;align-items:stretch;flex-wrap:wrap;width:100%">
+      <div class="card options-card" style="flex:0 0 calc((100% - 54px) / 4);min-width:220px;display:flex;flex-direction:column;gap:10px">
+        <div class="card-title" style="margin:0">Search Options</div>
+        <div class="control-subrow muted-small card-subtext" style="display:grid;grid-template-columns:140px 100px 140px;column-gap:16px;align-items:center;justify-items:start;margin:0">
+          <div style="grid-column:1 / span 2">Ticker and window size</div>
+          <label class="spot-toggle" for="g_spot_toggle" style="grid-column:3">
+            <input type="checkbox" id="g_spot_toggle">
+            <span>Spot override</span>
+          </label>
+        </div>
+        <div class="control-row form-row" style="display:grid;grid-template-columns:140px 100px 140px;column-gap:16px;align-items:center;justify-items:start">
+          <div class="field-ticker">
+            <input type="text" id="g_symbol" value="{{ symbol }}" placeholder="Ticker (e.g. SPX, NVDA)" required style="width:140px">
+          </div>
+          <div class="field-window">
+            <div class="suffix-input" style="width:100px;position:relative;display:inline-flex;align-items:center">
+              <input type="number" id="g_window" class="num" value="10" min="0.01" max="50" step="0.01" style="width:100%;padding-right:26px">
+              <span class="suffix" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);pointer-events:none;white-space:nowrap">%</span>
+            </div>
+          </div>
+          <div class="field-spot">
+            <input type="text" id="g_spot" placeholder="Spot price" class="disabled" disabled maxlength="6" style="width:140px">
+          </div>
+        </div>
+        <div class="action-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <div class="progress-sm"><div class="bar-sm" id="g_bar"></div></div>
+            <span class="muted" id="g_status"></span>
+          </div>
+          <button class="btn primary" type="submit">Run</button>
+          <button class="btn secondary" type="button" onclick="stopGex()">Stop</button>
+        </div>
+      </div>
+      <div class="card view-card" style="flex:0 0 calc((100% - 54px) / 4);min-width:200px;display:flex;flex-direction:column;gap:10px">
+        <div class="card-title" style="margin:0">View Options</div>
+        <div class="control-subrow muted-small card-subtext" style="margin:0">
+          <div>Flip mode</div>
+        </div>
+        <div class="control-row form-row" style="margin:0">
+          <div class="flip-mode" style="margin:0">
+            <button type="button" class="btn secondary" id="g_flip_macro_btn" aria-pressed="true" title="Macro: Σ GEX(strike&lt;spot) + Σ GEX(strike&gt;spot) = 0">Macro Flip</button>
+            <button type="button" class="btn ghost" id="g_flip_micro_btn" aria-pressed="false" title="Micro: GEXcalls(strike) − GEXputs(strike) = 0">Micro Flip</button>
+          </div>
+        </div>
+        <div class="form-row" style="margin:0">
+          <label class="muted">Auto refresh</label>
+          <select id="g_autorefresh" class="select-input" onchange="scheduleGexRefreshFromSelect()">
+            <option value="0">Off</option>
+            <option value="60">1 min</option>
+            <option value="300" selected>5 min</option>
+            <option value="900">15 min</option>
+          </select>
+        </div>
+      </div>
+      <div class="card ticker-details" style="flex:0 0 calc((100% - 18px) / 2);min-width:300px;display:flex;flex-direction:column;gap:10px">
+        <div class="card-title" style="margin:0">Ticker Details</div>
+        <div class="meta-grid">
+          <div class="meta-tile">
+            <div class="meta-label">Expiry</div>
+            <div class="meta-value" id="gh_expiry">—</div>
+          </div>
+          <div class="meta-tile">
+            <div class="meta-label">Spot</div>
+            <div class="meta-value" id="gh_spot">—</div>
+            <div class="meta-subvalue" id="gh_day">Day move —</div>
+          </div>
+          <div class="meta-tile">
+            <div class="meta-label">After hours</div>
+            <div class="meta-value" id="gh_ah">—</div>
+            <div class="meta-subvalue">vs RTH close</div>
+          </div>
+          <div class="meta-tile">
+            <div class="meta-label" id="gh_flip_label">Macro flip</div>
+            <div class="meta-value" id="gh_flip">—</div>
+          </div>
+          <div class="meta-tile">
+            <div class="meta-label">Refreshed</div>
+            <div class="meta-value" id="gh_refreshed">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </form>
+</div>
+
+    <div class="row" style="margin-top:18px">
+      <div class="card"><h3>Chart A — GEX by Strike (Calls vs Puts)</h3><div id="gex_net" style="height:660px"></div></div>
+      <div class="card"><h3>Chart B — Accumulated Net GEX</h3><div id="gex_split" style="height:660px"></div></div>
+    </div>
+
+    <div class="card" style="display:none"> 
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <h3 id="gdbg_title" style="cursor:pointer" onclick="gToggleDebug()">▸ Debug Console</h3>
+        <button class="btn secondary" type="button" onclick="gToggleDebug()" id="gdbg_toggle">Show</button>
+      </div>
+      <div id="gdebug_wrap" style="display:none"> 
+        <div class="logs" id="g_debug_logs" style="height:220px"></div>
+      </div>
+    </div>
+
+    <script>
+const GH_EL = document.getElementById("gh_symbol");
+const SERVER_SYMBOL = (GH_EL && GH_EL.dataset && GH_EL.dataset.symbol) ? GH_EL.dataset.symbol : "";
+let gWindowFromUrl = false;
+let gSpotFromUrl = false;
+window.addEventListener('error', function(e){ try{ console.error('GEX page script error', e && e.message ? e.message : e); }catch(_e){} });
+window.addEventListener('unhandledrejection', function(e){ try{ console.error('GEX page unhandled rejection', e && e.reason ? e.reason : e); }catch(_e){} });
+      let gJobId = null; let gActiveJobId = null; let gDebugOpen = false; let gCurrentStatus = 'idle'; let gAutoTriggered = false; let gRefreshTimer = null; let gFlipMode = 'macro';
+      function gSetLogs(lines) {
+        const el = document.getElementById('g_debug_logs'); if(!el) return;
+        let combined = [];
+        try { if (Array.isArray(window.__preludeLogs) && window.__preludeLogs.length) combined = window.__preludeLogs.slice(); } catch(e) {}
+        combined = combined.concat(lines||[]);
+        el.textContent = combined.join('\\n');
+        el.scrollTop = 1e9;
+      }
+      function gAppendLog(line) { const el = document.getElementById('g_debug_logs'); if(!el) return; el.textContent += (el.textContent?'\\n':'') + line; el.scrollTop = 1e9; }
+      function gApplyDebugState() { const wrap=document.getElementById('gdebug_wrap'); const t=document.getElementById('gdbg_title'); const b=document.getElementById('gdbg_toggle'); if(wrap) wrap.style.display = gDebugOpen?'block':'none'; if(t) t.textContent=(gDebugOpen?'▾ ':'▸ ')+ 'Debug Console'; if(b) b.textContent=gDebugOpen?'Hide':'Show'; }
+      function gToggleDebug() { gDebugOpen = !gDebugOpen; try { localStorage.setItem('debug:open', gDebugOpen ? '1':'0'); } catch(e) {} gApplyDebugState(); }
+      function gDebugLog(message, status, meta) {
+        try {
+          fetch('/api/debug/client', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({message: message || '', status: status || 'info', meta: meta || {}}),
+            keepalive: true
+          }).catch(()=>{});
+        } catch(e) {}
+      }
+      function gLoadPlotlyFallback() {
+        try {
+          if (window.Plotly || document.getElementById('plotly_fallback')) return;
+          const s = document.createElement('script');
+          s.id = 'plotly_fallback';
+          s.async = true;
+          s.src = 'https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.30.0/plotly.min.js';
+          document.head.appendChild(s);
+        } catch(e) {}
+      }
+      function gWaitForPlotly(timeoutMs) {
+        if (window.Plotly && typeof window.Plotly.newPlot === 'function') return Promise.resolve(true);
+        gLoadPlotlyFallback();
+        const start = Date.now();
+        return new Promise((resolve)=>{
+          const tick = ()=>{
+            if (window.Plotly && typeof window.Plotly.newPlot === 'function') return resolve(true);
+            if (Date.now() - start >= timeoutMs) return resolve(false);
+            setTimeout(tick, 200);
+          };
+          tick();
+        });
+      }
+      function gPositionMenu(el, btnId) { try { const btn=document.getElementById(btnId); if(!btn||!el) return; const r=btn.getBoundingClientRect(); el.style.position='fixed'; el.style.top = (Math.round((r.bottom||60)+10))+'px'; el.style.right = Math.max(12, Math.round(window.innerWidth - r.right) + 12) + 'px'; el.style.zIndex='10000'; } catch(e) {} }
+      function gToggleMenu(force) { const el=document.getElementById('g_menu_panel'); if(!el) return; if(typeof force==='boolean'){ if(force){ gPositionMenu(el,'g_menu_btn'); el.style.display='block'; } else { el.style.display='none'; } return; } const show=(el.style.display==='none'||!el.style.display); if(show){ gPositionMenu(el,'g_menu_btn'); el.style.display='block'; } else { el.style.display='none'; } }
+      window.addEventListener('resize', ()=>{ const el=document.getElementById('g_menu_panel'); if(el && el.style.display==='block') gPositionMenu(el,'g_menu_btn'); });
+      function gSetupOutsideClose(panelId, btnId, closerName) {
+        document.addEventListener('click', (e)=>{
+          try {
+            const p = document.getElementById(panelId);
+            const b = document.getElementById(btnId);
+            if(!p) return;
+            if(p.style.display !== 'block') return;
+            const t = e.target;
+            if (p.contains(t) || (b && b.contains(t))) return;
+            if (typeof window[closerName] === 'function') window[closerName](false);
+          } catch(ex) {}
+        });
+      }
+      gSetupOutsideClose('g_menu_panel','g_menu_btn','gToggleMenu');
+      function gSetSpotOverrideEnabled(on) {
+        const box = document.getElementById('g_spot_toggle');
+        const inp = document.getElementById('g_spot');
+        if (box) box.checked = !!on;
+        if (inp) {
+          inp.disabled = !on;
+          inp.classList.toggle('disabled', !on);
+          const color = on ? '' : '#8a98ad';
+          inp.style.color = color;
+          inp.style.webkitTextFillColor = color;
+          inp.style.opacity = on ? '' : '0.7';
+        }
+      }
+      function gApplyScopeState() {
+        const modeEl = document.getElementById('g_expiry_mode');
+        const expSel = document.getElementById('gh_expiry_sel');
+        const isAll = (modeEl && modeEl.value === 'all');
+        if (expSel) {
+          expSel.disabled = isAll;
+          expSel.setAttribute('aria-disabled', isAll ? 'true' : 'false');
+          expSel.classList.toggle('muted', expSel.disabled);
+        }
+      }
+      function gParseNum(v) {
+        const n = Number(v);
+        return (v !== null && v !== undefined && !Number.isNaN(n)) ? n : null;
+      }
+      // Events: use shared functions defined above (no duplicate defs here)
+      function updateGexHeaderMeta(meta) {
+        try {
+          const expEl = document.getElementById('gh_expiry');
+          const spotEl = document.getElementById('gh_spot');
+          const dayEl = document.getElementById('gh_day');
+          const ahEl = document.getElementById('gh_ah');
+          const flipEl = document.getElementById('gh_flip');
+          const flipLabelEl = document.getElementById('gh_flip_label');
+          const refEl = document.getElementById('gh_refreshed');
+          if (expEl) expEl.textContent = (meta && meta.expiry) || ((document.getElementById('gh_expiry_sel') && document.getElementById('gh_expiry_sel').value) || '—');
+          const sp = (meta && meta.spot!=null) ? Number(meta.spot) : null;
+          if (spotEl) spotEl.textContent = (sp!=null && !Number.isNaN(sp)) ? sp.toFixed(2) : '—';
+          let dayTxt='—'; let ahTxt='—';
+          if (sp!=null && !Number.isNaN(sp)) {
+            const dayRef=(meta&&meta.prev_close_yest!=null)?Number(meta.prev_close_yest):((meta&&meta.prev_close!=null)?Number(meta.prev_close):null);
+            const rthClose=(meta&&meta.rth_close!=null)?Number(meta.rth_close):null;
+            const ah=(meta&&meta.spot_ah!=null)?Number(meta.spot_ah):null;
+            if(dayRef!==null && !Number.isNaN(dayRef)) { const dpct=((sp-dayRef)/dayRef*100.0); dayTxt=(dpct>=0?'+':'')+dpct.toFixed(2)+'%'; }
+            if(ah!==null && rthClose!==null && !Number.isNaN(ah) && !Number.isNaN(rthClose)) { const apct=((ah-rthClose)/rthClose*100.0); const adel=(ah-rthClose); ahTxt=(apct>=0?'+':'')+apct.toFixed(2)+'% ('+(adel>=0?'+':'')+adel.toFixed(2)+')'; }
+            const inp=document.getElementById('g_spot'); if(inp) inp.value=sp.toFixed(2);
+            const spotToggle = document.getElementById('g_spot_toggle');
+            if (spotToggle) gSetSpotOverrideEnabled(spotToggle.checked);
+          }
+          if(dayEl) dayEl.textContent = 'Day move ' + dayTxt;
+          if(ahEl) ahEl.textContent = ahTxt;
+          if(flipLabelEl) flipLabelEl.textContent = gFlipMode === 'micro' ? 'Micro flip' : 'Macro flip';
+          const macroFlip = gParseNum(meta && meta.gex_flip);
+          const microFlip = gParseNum(meta && meta.gex_flip_micro);
+          const chosenFlip = (gFlipMode === 'micro'
+            ? (microFlip != null ? microFlip : macroFlip)
+            : (macroFlip != null ? macroFlip : microFlip));
+          if(flipEl) flipEl.textContent = (chosenFlip != null) ? chosenFlip.toFixed(2) : '—';
+          if(refEl) refEl.textContent = (meta && meta.as_of) || '—';
+        } catch(e) {}
+      }
+      function gSwitchToGex() {
+        const sym = document.getElementById('g_symbol').value.trim().toUpperCase(); if(!sym) return;
+        const spotToggle = document.getElementById('g_spot_toggle');
+        const spot = (spotToggle && spotToggle.checked) ? document.getElementById('g_spot').value.trim() : '';
+        const expSelEl = document.getElementById('gh_expiry_sel');
+        const exp = expSelEl ? expSelEl.value : '';
+        const win = document.getElementById('g_window').value || '';
+        const emodeEl = document.getElementById('g_expiry_mode');
+        const emode = (emodeEl && emodeEl.value) ? emodeEl.value : 'current';
+        const effExp = (emode === 'all') ? '' : exp;
+        const qs = new URLSearchParams({symbol:sym, spot:spot, window:win, expiry:effExp, emode, autorun:'1'}).toString();
+        window.location.href = `/gexticker/${SERVER_SYMBOL || sym || ""}?${qs}`;
+      }
+      function gSwitchToVanna() {
+        const sym = document.getElementById('g_symbol').value.trim().toUpperCase(); if(!sym) return;
+        const spotToggle = document.getElementById('g_spot_toggle');
+        const spot = (spotToggle && spotToggle.checked) ? document.getElementById('g_spot').value.trim() : '';
+        const expSel = document.getElementById('gh_expiry_sel');
+        const exp = expSel ? expSel.value : '';
+        const win = document.getElementById('g_window').value || '';
+        const emodeEl = document.getElementById('g_expiry_mode');
+        const emode = (emodeEl && emodeEl.value) ? emodeEl.value : 'current';
+        const effExp = (emode === 'all') ? '' : exp;
+        const qs = new URLSearchParams({symbol:sym, spot:spot, window:win, expiry:effExp, emode, autorun:'1'}).toString();
+        window.location.href = `/ticker/${SERVER_SYMBOL || sym || ""}?${qs}`;
+      }
+      // utility for clipboard used on GEX page as well
+      function writeClipboard(txt) {
+        try { if (navigator && navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(txt); } catch(e) {}
+        return new Promise((resolve)=>{ const ta=document.createElement('textarea'); ta.value=txt; document.body.appendChild(ta); ta.select(); try{document.execCommand('copy');}catch(e){} document.body.removeChild(ta); resolve(); });
+      }
+      async function loadGexExpiries(sym) {
+        const el = document.getElementById('gh_expiry_sel');
+        let exps = [];
+        let error = null;
+        try {
+          const r = await fetch(`/api/expiries?symbol=${encodeURIComponent(sym)}`);
+          if (!r.ok) throw new Error('Expiries fetch failed');
+          const j = await r.json();
+          exps = (j.expiries||[]);
+          if (el) {
+            el.innerHTML = '';
+            if (!exps.length) {
+              const o=document.createElement('option'); o.value=''; o.textContent='No expiries'; o.disabled=true; el.appendChild(o);
+            } else {
+              exps.forEach(e=>{ const o=document.createElement('option'); o.value=e; o.textContent=e; el.appendChild(o); });
+            }
+            try {
+              const url = new URL(window.location.href);
+              const qexp = url.searchParams.get('expiry');
+              if (qexp && (exps||[]).includes(qexp)) el.value = qexp; else { const k='gex:expiry:'+sym; const sv = localStorage.getItem(k); if(sv && (exps||[]).includes(sv)) el.value = sv; }
+            } catch(e) {}
+            if(!el.value && exps.length) el.value = exps[0];
+            el.onchange = ()=>{ try { localStorage.setItem('gex:expiry:'+sym, el.value); } catch(e) {}; startGex(new Event('submit')); }
+            gApplyScopeState();
+          }
+        } catch(e) {
+          error = e;
+          if(el){
+            el.innerHTML = '';
+            const o=document.createElement('option'); o.value=''; o.textContent='Failed to load expiries'; o.disabled=true; el.appendChild(o);
+          }
+          const statusEl = document.getElementById('g_status');
+          if(statusEl && !statusEl.textContent) statusEl.textContent = 'Expiries unavailable';
+        }
+        // autorun once even if expiries failed (use null expiry)
+        if (!window.__gexAutoRan && sym) { window.__gexAutoRan = true; startGex(new Event('submit')); }
+      }
+      async function startGex(ev) {
+        ev.preventDefault();
+        gAutoTriggered = true;
+        const sym = document.getElementById('g_symbol').value.trim().toUpperCase();
+        const hsym = document.getElementById('gh_symbol'); if(hsym) hsym.textContent = (sym||'Ticker') + ' — GEX';
+        if(!sym) return;
+        const spotToggle = document.getElementById('g_spot_toggle');
+        const spot = (spotToggle && spotToggle.checked) ? document.getElementById('g_spot').value.trim() : '';
+        const pctWindow = (parseFloat(document.getElementById('g_window').value||'10')/100.0) || 0.10;
+        const expSel = document.getElementById('gh_expiry_sel');
+        const expiry = expSel && expSel.value ? expSel.value : null;
+        document.getElementById('g_status').textContent = 'Starting…';
+        document.getElementById('g_bar').style.width = '5%';
+        try {
+          const emodeEl = document.getElementById('g_expiry_mode');
+          const emode = (emodeEl && emodeEl.value) ? emodeEl.value : 'current';
+          const isAllScope = emode === 'all';
+          const sendExpiry = isAllScope ? null : expiry;
+          gDebugLog('gex:request', 'info', {symbol:sym, expiry: sendExpiry, next_only: false, pct_window: pctWindow, emode});
+          const res = await fetch('/api/gex/start', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ symbol:sym, spot_override:spot||null, next_only: false, pct_window: pctWindow, expiry: sendExpiry, expiry_mode: emode }) });
+          if(!res.ok) throw new Error('Start failed');
+          const p = await res.json(); gJobId = p.job_id; gActiveJobId = gJobId; pollGex(gJobId);
+          const t0 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+          const data = await waitGex(gJobId);
+          if (gActiveJobId === gJobId) {
+            gDebugLog('gex:result', 'info', {symbol:sym, job_id: gJobId, strikes:((data && data.strikes)||[]).length});
+            gDebugLog('gex:render_start', 'info', {symbol:sym, job_id: gJobId});
+            const statusEl = document.getElementById('g_status');
+            if (statusEl) statusEl.textContent = 'Rendering…';
+            const plotlyOk = await gWaitForPlotly(8000);
+            if (!plotlyOk) {
+              if (statusEl) statusEl.textContent = 'Chart library failed to load';
+              gDebugLog('gex:plotly_missing', 'error', {symbol:sym, job_id: gJobId});
+              return;
+            }
+            renderGex(data);
+            if (statusEl) statusEl.textContent = 'done';
+            // cache
+            try {
+              const t1 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
+              const durMs = Math.max(0, t1 - t0);
+              gAppendLog(`Job runtime: ${(durMs).toFixed ? durMs.toFixed(0) : durMs} ms (cached)`);
+              const strikeCount = (data && Array.isArray(data.strikes)) ? data.strikes.length : 0;
+              if (strikeCount > 0) {
+                localStorage.setItem('gex:cache:'+sym, JSON.stringify({ts:Date.now(), params: {expiry: (sendExpiry||''), window: String(document.getElementById('g_window').value||''), spot: (spot||'')}, data: data, metrics: {dur_ms: durMs}}));
+              } else {
+                gAppendLog('Skipping cache: empty strikes');
+                gDebugLog('gex:cache_skip', 'info', {symbol:sym, reason:'empty_strikes'});
+              }
+              if (window.__gexCacheMsg) gAppendLog(window.__gexCacheMsg);
+            } catch(e) {}
+            // update URL
+            try {
+              const effExpiry = isAllScope ? '' : (expiry||'');
+              const qs = new URLSearchParams({symbol:sym, spot:spot||'', window: String(document.getElementById('g_window').value||''), expiry: effExpiry, emode: emode}).toString();
+              window.history.replaceState(null,'',`/gexticker/${SERVER_SYMBOL || sym || ""}?${qs}`);
+            } catch(e) {}
+            gDebugLog('gex:render_ok', 'success', {symbol:sym, job_id: gJobId});
+          }
+        } catch(e) { document.getElementById('g_status').textContent = 'Error'; gDebugLog('gex:render_error', 'error', {error: String(e&&e.message||e)}); }
+      }
+      async function stopGex() { if(!gJobId) return; await fetch('/api/gex/stop', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({job_id:gJobId})}); }
+      async function pollGex(jobId) {
+        let keep=true; while(keep) {
+          if (jobId !== gActiveJobId) break;
+          const r = await fetch(`/api/gex/status?job_id=${jobId}`); if(!r.ok) break; const s = await r.json();
+          document.getElementById('g_bar').style.width = Math.round((s.progress||0)*100)+'%';
+          document.getElementById('g_status').textContent = s.status;
+          gCurrentStatus = s.status||'unknown'; if(s.logs&&s.logs.length) gSetLogs(s.logs);
+          if(['done','error','cancelled'].includes(s.status)) keep=false; await new Promise(r=>setTimeout(r,600));
+        }
+      }
+      function scheduleGexRefreshFromSelect(){
+        if (gRefreshTimer) { clearInterval(gRefreshTimer); gRefreshTimer=null; }
+        const sel = document.getElementById('g_autorefresh');
+        const val = parseInt(sel ? sel.value : '0', 10) || 0;
+        try { localStorage.setItem('gex:auto', String(val)); } catch(e) {}
+        if (val>0) { gRefreshTimer = setInterval(()=>{ const s=document.getElementById('g_symbol').value.trim(); if(s && !gJobId) startGex(new Event('submit')); }, val*1000); }
+      }
+      function setFlipMode(mode){
+        const macroBtn = document.getElementById('g_flip_macro_btn');
+        const microBtn = document.getElementById('g_flip_micro_btn');
+        gFlipMode = (mode === 'micro') ? 'micro' : 'macro';
+        try { localStorage.setItem('gex:flipmode', gFlipMode); } catch(e) {}
+        const macroActive = gFlipMode !== 'micro';
+        if(macroBtn){
+          macroBtn.classList.toggle('secondary', macroActive);
+          macroBtn.classList.toggle('flip-active', macroActive);
+          macroBtn.classList.toggle('ghost', !macroActive);
+          macroBtn.setAttribute('aria-pressed', macroActive ? 'true' : 'false');
+        }
+        if(microBtn){
+          microBtn.classList.toggle('secondary', !macroActive);
+          microBtn.classList.toggle('flip-active', !macroActive);
+          microBtn.classList.toggle('ghost', macroActive);
+          microBtn.setAttribute('aria-pressed', macroActive ? 'false' : 'true');
+        }
+        const flipLabelEl = document.getElementById('gh_flip_label');
+        if(flipLabelEl) flipLabelEl.textContent = gFlipMode === 'micro' ? 'Micro flip' : 'Macro flip';
+        if(gLastData){ renderGex(gLastData); }
+      }
+      async function waitGex(jobId) {
+        const startTs = Date.now();
+        while(true) {
+          if (jobId !== gActiveJobId) throw new Error('Superseded by a new run');
+          const st = await fetch(`/api/gex/status?job_id=${jobId}`); if(!st.ok) throw new Error('Status fetch failed'); const s = await st.json();
+          const status = s.status || 'unknown'; if(status==='error') throw new Error('Job error'); if(status==='cancelled') throw new Error('Job cancelled');
+          const r = await fetch(`/api/gex/result?job_id=${jobId}`);
+          if(!r.ok) throw new Error('Failed');
+          const j = await r.json();
+          if(j && j.status === 'pending'){
+            document.getElementById('g_status').textContent = j.job_status || 'pending';
+            document.getElementById('g_bar').style.width = Math.round((j.progress||0)*100)+'%';
+          } else {
+            return j;
+          }
+          if(Date.now()-startTs > 180000) throw new Error('Timeout waiting for result'); await new Promise(r=>setTimeout(r,500));
+        }
+      }
+      function formatAbbrev(n) {
+        const s = Math.sign(n||0);
+        const v = Math.abs(n||0);
+        if (v >= 1e12) return (s*v/1e12).toFixed(2)+'T';
+        if (v >= 1e9) return (s*v/1e9).toFixed(2)+'B';
+        if (v >= 1e6) return (s*v/1e6).toFixed(2)+'M';
+        if (v >= 1e3) return (s*v/1e3).toFixed(2)+'K';
+        return (s*v).toFixed(0);
+      }
+      let gLastData = null;
+      function renderGex(d) {
+        gLastData = d;
+        const netEl = document.getElementById('gex_net');
+        const splitEl = document.getElementById('gex_split');
+        if (!netEl || !splitEl) {
+          gDebugLog('gex:missing_nodes', 'error', {has_net: !!netEl, has_split: !!splitEl});
+          return;
+        }
+        const rawStrikes = d.strikes||[];
+        const rawNet = (d.gex_net||[]).map(Number);
+        const rawCalls = (d.gex_calls||[]).map(Number);
+        const rawPuts = (d.gex_puts||[]).map(Number);
+        if (!rawStrikes.length) {
+          netEl.innerHTML = '<div class="muted" style="padding:10px">No GEX data returned.</div>';
+          splitEl.innerHTML = '<div class="muted" style="padding:10px">No GEX data returned.</div>';
+          const statusEl = document.getElementById('g_status');
+          if (statusEl) statusEl.textContent = 'No data';
+          gDebugLog('gex:no_data', 'info', {symbol: (d.meta && d.meta.symbol) || '', strikes: rawStrikes.length});
+          return;
+        }
+        const ordered = rawStrikes.map((s,i)=>[Number(s), rawNet[i]||0, rawCalls[i]||0, rawPuts[i]||0]).sort((a,b)=>a[0]-b[0]);
+        const x = ordered.map(r=>r[0]);
+        const gnet = ordered.map(r=>r[1]);
+        const gc = ordered.map(r=>r[2]);
+        const gp = ordered.map(r=>r[3]);
+        const gridcolor = '#1f2937';
+        // Compute flips
+        const meta = d.meta || {};
+        const macroFlip = gParseNum(meta.gex_flip);
+        const microFlip = gParseNum(meta.gex_flip_micro);
+        const chosenFlip = (gFlipMode === 'micro'
+          ? (microFlip != null ? microFlip : macroFlip)
+          : (macroFlip != null ? macroFlip : microFlip));
+        updateGexHeaderMeta(meta);
+        // metrics + delta, store lightweight timeseries
+        const net = gnet.reduce((a,b)=>a+(b||0),0);
+        const gsEl = document.getElementById('g_symbol');
+        const sym = (d.meta && d.meta.symbol) || (gsEl && gsEl.value ? gsEl.value.trim().toUpperCase() : '');
+        let prev = null; try { const arr = JSON.parse(localStorage.getItem('gex:series:'+sym)||'[]'); if(Array.isArray(arr) && arr.length) prev = arr[arr.length-1].net; } catch(e) {}
+        const delta = (prev!==null && prev!==undefined) ? (net - prev) : null;
+        const met = document.getElementById('gh_metrics'); if(met) met.textContent = ' | Net GEX: ' + formatAbbrev(net) + (delta===null?'':('  Δ: '+formatAbbrev(delta)));
+        try { updateGexSeries(sym, net, chosenFlip); } catch(e) {}
+        // autoscale similar to Vanna
+        const absmax = Math.max(1e-12, ...gnet.map(v=>Math.abs(v)), ...gc.map(v=>Math.abs(v)), ...gp.map(v=>Math.abs(v)));
+        let factor = 1, suffix = '';
+        const scales = [1, 1e3, 1e6, 1e9];
+        for (const f of scales) { if (absmax*f >= 1 && absmax*f < 1000) { factor = f; break; } }
+        if (factor===1e3) suffix=' (×1e3)'; else if (factor===1e6) suffix=' (×1e6)'; else if (factor===1e9) suffix=' (×1e9)';
+        const ynet = gnet.map(v=>v*factor), ygc = gc.map(v=>v*factor), ygp = gp.map(v=>v*factor);
+        const spot = (d.meta && Number(d.meta.spot)) || null;
+        const spotAH = (d.meta && Number(d.meta.spot_ah)) || null;
+        const dayRef = (d.meta && d.meta.prev_close_yest!=null) ? Number(d.meta.prev_close_yest) : ((d.meta && d.meta.prev_close!=null) ? Number(d.meta.prev_close) : null);
+        const rthClose = (d.meta && d.meta.rth_close!=null) ? Number(d.meta.rth_close) : null;
+        const yMin = Math.min(0, ...ygc, ...ygp, ...ynet);
+        const yMax = Math.max(0, ...ygc, ...ygp, ...ynet);
+        const extra = [];
+        if (spot) {
+          const pct = (dayRef? ((spot-dayRef)/dayRef*100.0) : null);
+          const txt = 'Spot: ' + spot.toFixed(2) + (pct==null?'':(' (' + (pct>=0?'+':'') + pct.toFixed(2) + '%)'));
+          extra.push({x:[spot,spot], y:[yMin,yMax], type:'scatter', mode:'lines', name:'Spot', hoverinfo:'text', text:[txt,txt], line:{color:'#ffffff', width:1, dash:'dot'}, showlegend:false});
+        }
+        if (spotAH) {
+          const pct = (rthClose? ((spotAH-rthClose)/rthClose*100.0) : null);
+          const delta = (rthClose? (spotAH-rthClose) : null);
+          let txt = 'After-hours: ' + spotAH.toFixed(2);
+          if (pct!=null) txt += ' (' + (pct>=0?'+':'') + pct.toFixed(2) + '%';
+          if (delta!=null) txt += ', ' + (delta>=0?'+':'') + delta.toFixed(2) + ')';
+          extra.push({x:[spotAH,spotAH], y:[yMin,yMax], type:'scatter', mode:'lines', name:'After-hours', hoverinfo:'text', text:[txt,txt], line:{color:'#d2b48c', width:1, dash:'dot'}, opacity:0.8, showlegend:false});
+        }
+        // Add Gamma flip level (vertical solid orange) if present
+        try { const flip = (chosenFlip!=null && !Number.isNaN(Number(chosenFlip))) ? Number(chosenFlip) : null; if (flip) { extra.push({x:[flip,flip], y:[yMin,yMax], type:'scatter', mode:'lines', name:'Gamma flip', hoverinfo:'text', text:[gFlipMode==='micro'?'Micro flip':'Macro flip',gFlipMode==='micro'?'Micro flip':'Macro flip'], line:{color:'#f59e0b', width:2, dash:'solid'}, showlegend:false}); } } catch(e) {}
+        // Chart A bars only (no connecting Net line)
+        const plotA = Plotly.newPlot(netEl, [{x, y:ygc, type:'bar', name:'Calls'}, {x, y:ygp, type:'bar', name:'Puts'}].concat(extra), {
+          barmode:'relative', paper_bgcolor:'#111827', plot_bgcolor:'#111827',
+          xaxis:{title:'Strike', gridcolor}, yaxis:{title:'GEX'+suffix, gridcolor, autorange:true}, margin:{t:20}
+        }, {displayModeBar:false});
+        if (plotA && typeof plotA.catch === 'function') {
+          plotA.catch((e)=> gDebugLog('gex:plot_error', 'error', {chart:'gex_net', error: String(e && e.message ? e.message : e)}));
+        }
+        // accumulated net gex (cumulative sum)
+        let csum = []; let acc = 0; for(let i=0;i<ynet.length;i++) { acc += (ynet[i]||0); csum.push(acc); }
+        const yMinB2 = Math.min(0, ...csum);
+        const yMaxB2 = Math.max(0, ...csum);
+        const extraB2 = [];
+        if (spot) {
+          const pct = (dayRef? ((spot-dayRef)/dayRef*100.0) : null);
+          const txt = 'Spot: ' + spot.toFixed(2) + (pct==null?'':(' (' + (pct>=0?'+':'') + pct.toFixed(2) + '%)'));
+          extraB2.push({x:[spot,spot], y:[yMinB2,yMaxB2], type:'scatter', mode:'lines', name:'Spot', hoverinfo:'text', text:[txt,txt], line:{color:'#ffffff', width:1, dash:'dot'}, showlegend:false});
+        }
+        if (spotAH) {
+          const pct = (rthClose? ((spotAH-rthClose)/rthClose*100.0) : null);
+          const delta = (rthClose? (spotAH-rthClose) : null);
+          let txt = 'After-hours: ' + spotAH.toFixed(2);
+          if (pct!=null) txt += ' (' + (pct>=0?'+':'') + pct.toFixed(2) + '%';
+          if (delta!=null) txt += ', ' + (delta>=0?'+':'') + delta.toFixed(2) + ')';
+          extraB2.push({x:[spotAH,spotAH], y:[yMinB2,yMaxB2], type:'scatter', mode:'lines', name:'After-hours', hoverinfo:'text', text:[txt,txt], line:{color:'#d2b48c', width:1, dash:'dot'}, opacity:0.8, showlegend:false});
+        }
+        // Add Gamma flip to accumulated chart as well
+        try { const flip2 = (chosenFlip!=null && !Number.isNaN(Number(chosenFlip))) ? Number(chosenFlip) : null; if (flip2) { extraB2.push({x:[flip2,flip2], y:[yMinB2,yMaxB2], type:'scatter', mode:'lines', name:'Gamma flip', hoverinfo:'text', text:[gFlipMode==='micro'?'Micro flip':'Macro flip',gFlipMode==='micro'?'Micro flip':'Macro flip'], line:{color:'#f59e0b', width:2, dash:'solid'}, showlegend:false}); } } catch(e) {}
+        const plotB = Plotly.newPlot(splitEl, [{x, y:csum, type:'scatter', mode:'lines+markers', name:'Accumulated'}].concat(extraB2), {paper_bgcolor:'#111827', plot_bgcolor:'#111827', xaxis:{title:'Strike', gridcolor}, yaxis:{title:'Accumulated Net GEX'+suffix, gridcolor, autorange:true}, margin:{t:20}}, {displayModeBar:false});
+        if (plotB && typeof plotB.catch === 'function') {
+          plotB.catch((e)=> gDebugLog('gex:plot_error', 'error', {chart:'gex_split', error: String(e && e.message ? e.message : e)}));
+        }
+        gDebugLog('gex:flip_render', 'info', {mode:gFlipMode, macro: macroFlip, micro: microFlip, chosen: chosenFlip});
+      }
+      async function gCopyPairs() { if(!gJobId) return; try { const r=await fetch(`/api/gex/export/pairs?job_id=${gJobId}`); if(!r.ok) throw new Error('Export failed'); const j=await r.json(); await writeClipboard(j.pairs||''); } catch(e) {} }
+      async function gCopyPine() { if(!gJobId) return; try { const r=await fetch(`/api/gex/export/pine?job_id=${gJobId}`); if(!r.ok) throw new Error('Export failed'); const j=await r.json(); await writeClipboard(j.pine||''); } catch(e) {} }
+      function maybePreloadGexFromCache() {
+        const sym = document.getElementById('g_symbol').value.trim().toUpperCase(); if(!sym) return;
+        try {
+          const c = JSON.parse(localStorage.getItem('gex:cache:'+sym)||'null'); if(!c) return;
+          // Use Vanna's auto-refresh setting as TTL for cross-view caching
+          let ttlMs = 0; try { const v = parseInt(localStorage.getItem('vanna:auto')||'0',10); ttlMs = isNaN(v)?0:(v*1000); } catch(e) { ttlMs = 0; }
+          if(ttlMs<=0) return;
+          const ageMs = Date.now() - (c.ts||0);
+          if(ageMs <= ttlMs) {
+            const prev = (c.metrics && typeof c.metrics.dur_ms !== 'undefined') ? String((c.metrics.dur_ms||0).toFixed ? c.metrics.dur_ms.toFixed(0) : c.metrics.dur_ms) : 'n/a';
+            window.__gexCacheMsg = `Cache hit: ${SERVER_SYMBOL || sym || ""} age=${(ageMs/1000).toFixed(1)}s; prev runtime=${prev} ms`;
+            window.__preludeLogs = [window.__gexCacheMsg];
+            gAppendLog(window.__gexCacheMsg);
+            gWaitForPlotly(4000).then((ok)=>{
+              if (ok) {
+                const strikes = (c.data && c.data.strikes) || [];
+                if (!Array.isArray(strikes) || strikes.length === 0) {
+                  gAppendLog('Cache empty: clearing local cache');
+                  gDebugLog('gex:cache_empty', 'info', {symbol:sym});
+                  try { localStorage.removeItem('gex:cache:'+sym); } catch(e) {}
+                  return;
+                }
+                renderGex(c.data||{});
+              } else {
+                const statusEl = document.getElementById('g_status');
+                if (statusEl) statusEl.textContent = 'Chart library failed to load';
+                gDebugLog('gex:plotly_missing', 'error', {symbol:sym, job_id: gJobId});
+              }
+            });
+          } else {
+            window.__gexCacheMsg = `Cache stale: ${SERVER_SYMBOL || sym || ""} age=${(ageMs/1000).toFixed(1)}s > TTL=${(ttlMs/1000)}s`;
+            window.__preludeLogs = [window.__gexCacheMsg];
+            gAppendLog(window.__gexCacheMsg);
+          }
+        } catch(e) {}
+      }
+      document.addEventListener('DOMContentLoaded', ()=>{
+        let s = document.getElementById('g_symbol').value.trim();
+        // ensure symbol from path if missing
+        try { if(!s) { const m = (location.pathname||'').match(/\/gexticker\/(.+)$/); if(m && m[1]) { document.getElementById('g_symbol').value = decodeURIComponent(m[1]); s = document.getElementById('g_symbol').value.trim(); } } } catch(e) {}
+        // parse URL query to keep values consistent
+        try {
+          const url = new URL(window.location.href);
+          const qspot=url.searchParams.get('spot');
+          if(qspot!==null && String(qspot).trim() !== ''){
+            const spotEl=document.getElementById('g_spot');
+            if(spotEl) spotEl.value=qspot;
+            gSpotFromUrl = true;
+            const box=document.getElementById('g_spot_toggle'); if(box) box.checked = true;
+          }
+          const qwin=url.searchParams.get('window');
+          if(qwin!==null){ const wEl=document.getElementById('g_window'); if(wEl){ wEl.value=qwin; gWindowFromUrl = true; } }
+          const qemode=url.searchParams.get('emode'); if(qemode) { const el=document.getElementById('g_expiry_mode'); if(el) el.value=qemode; }
+          const qsym=url.searchParams.get('symbol'); if(qsym){ const symEl=document.getElementById('g_symbol'); if(symEl){ symEl.value=qsym.toUpperCase(); } }
+        } catch(e) {}
+        // per-ticker window restore and autorefresh
+        try { const sym = (document.getElementById('g_symbol').value||'').trim().toUpperCase(); const ws = localStorage.getItem('gex:window:'+sym); if(ws!==null && !gWindowFromUrl) document.getElementById('g_window').value = ws; } catch(e) {}
+        // persist on change
+        try { document.getElementById('g_window').addEventListener('change', ()=>{ try { const sym=(document.getElementById('g_symbol').value||'').trim().toUpperCase(); localStorage.setItem('gex:window:'+sym, document.getElementById('g_window').value); } catch(e) {} }); } catch(e) {}
+        try { const box=document.getElementById('g_spot_toggle'); if(box){ box.addEventListener('change', ()=>gSetSpotOverrideEnabled(box.checked)); gSetSpotOverrideEnabled(box.checked || gSpotFromUrl); } } catch(e) {}
+        try { const saved = localStorage.getItem('gex:auto'); if(saved!==null) document.getElementById('g_autorefresh').value = saved; } catch(e) {}
+        // expiry mode: default to current; override only via URL/user changes (no persistence)
+        try { const el=document.getElementById('g_expiry_mode'); if(el){ const url = new URL(window.location.href); const qemode=url.searchParams.get('emode'); el.value = qemode || 'current'; el.addEventListener('change', ()=>{ gApplyScopeState(); }); } } catch(e) {}
+        gApplyScopeState();
+        scheduleGexRefreshFromSelect();
+        if(s) loadGexExpiries(s);
+        // apply persisted debug state
+        try { const d = localStorage.getItem('debug:open'); if(d!==null) gDebugOpen = (d==='1'); } catch(e) {}
+        gApplyDebugState();
+        if(typeof updateEventButtonHighlight === 'function'){ updateEventButtonHighlight(); }
+        maybePreloadGexFromCache();
+        try{
+          const macroBtn = document.getElementById('g_flip_macro_btn');
+          const microBtn = document.getElementById('g_flip_micro_btn');
+          if(macroBtn) macroBtn.addEventListener('click', ()=>{ setFlipMode('macro'); });
+          if(microBtn) microBtn.addEventListener('click', ()=>{ setFlipMode('micro'); });
+          const savedFlip = localStorage.getItem('gex:flipmode');
+          if(savedFlip) gFlipMode = savedFlip;
+          setFlipMode(gFlipMode || 'macro');
+        }catch(e){}
+        // autorun handled in loadGexExpiries() after options populate
+      });
+        </script>
+    
+{% endblock %}

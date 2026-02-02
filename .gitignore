@@ -1,0 +1,35 @@
+.DS_Store
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.sqlite*
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+polygon-venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.idea/
+.vscode/
+
+# Build / runtime artifacts
+cache/
+snap_cache/
+out/
+__pycache__/
+*.egg-info/
+
+# Office/tmp files
+~$*
+.~lock.*#
+
+#additional python and test ignores
+dist/
+build/
+.coverage
+htmlcov/

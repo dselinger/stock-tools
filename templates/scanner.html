@@ -1,0 +1,603 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+<style>
+  .scan-table{width:100%;border-collapse:collapse;}
+  .scan-table th,.scan-table td{padding:10px;border-bottom:1px solid #1f2937;text-align:center;font-size:0.95rem;white-space:normal;line-height:1.35;}
+  .scan-table th{color:#e5e7eb;font-weight:700;line-height:1.3;}
+  .scan-table th:first-child,.scan-table td:first-child{text-align:left;}
+  .scan-table tbody tr:nth-child(odd){background:#0f172a;}
+  .scan-table tbody tr:nth-child(even){background:#111d2f;}
+  .scan-table tbody tr:hover{background:#16243b;}
+  .scan-badge{padding:4px 8px;border-radius:10px;font-weight:600;font-size:0.9rem;}
+  .scan-badge.pos{background:#0f2f22;color:#34d399;}
+  .scan-badge.neg{background:#2f1020;color:#f87171;}
+  .scan-badge.neutral{background:#111827;color:#9ca3af;border:1px solid #1f2937;}
+  .table-note{color:#9ca3af;font-size:0.85rem;margin-top:6px;}
+  .scan-row.missing-micro{opacity:0.45; filter:saturate(0.25);}
+  .trend-up{color:#34d399;font-weight:700;}
+  .trend-down{color:#f87171;font-weight:700;}
+  .trend-flat{color:#9ca3af;font-weight:700;}
+  .pct-up{color:#34d399;font-weight:700;}
+  .pct-down{color:#f87171;font-weight:700;}
+  .pct-flat{color:#9ca3af;font-weight:700;}
+  .scan-wrap{display:flex;flex-direction:column;gap:12px}
+  .scan-controls{padding:16px 18px}
+  .scan-top{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
+  .scan-top-left{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+  .scan-top-left .field-group{display:flex;flex-direction:column;gap:6px}
+  .scan-top-left .field-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .scan-top-left input[type=text]{width:140px}
+  .scan-top-left .suffix-input{position:relative;display:inline-flex;align-items:center}
+  .scan-top-left .suffix-input input{padding-right:26px;width:100px}
+  .scan-top-left .suffix-input .suffix{position:absolute;right:8px;color:#94a3b8;font-size:0.9rem}
+  .scan-actions{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  @media (max-width:1024px){.scan-top{flex-direction:column;align-items:flex-start;}.scan-actions{width:100%;justify-content:flex-end;}}
+  @media (max-width:800px){.scan-table{font-size:0.85rem;}.scan-table th,.scan-table td{padding:8px;}}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-head">
+  <a href="/" class="home-link" aria-label="Home">&#8962;</a>
+  <div class="head-titles">
+    <h1 style="margin:0">Gamma Scanner</h1>
+    <div class="muted head-desc">Watchlist of gamma flip distances across expirations.</div>
+  </div>
+  <div class="head-actions">
+    <button class="btn secondary" type="button" onclick="runScan()" id="sc_refresh">Refresh</button>
+  </div>
+</div>
+
+<div class="card scan-controls" style="margin-top:12px">
+  <div class="scan-top">
+    <div class="scan-top-left">
+      <div class="field-group">
+        <div class="muted">Add ticker</div>
+        <div class="field-row">
+          <input type="text" id="sc_input" placeholder="MSFT">
+          <button class="btn primary" type="button" onclick="addTicker()">Add</button>
+          <div class="suffix-input">
+            <input type="number" id="sc_window" class="num" value="10" min="1" max="50" step="0.5">
+            <span class="suffix">%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="scan-actions">
+      <span class="muted" id="sc_status"></span>
+      <div class="progress-sm"><div class="bar-sm" id="sc_bar"></div></div>
+      <span class="muted" id="sc_bar_pct"></span>
+      <button class="btn secondary" type="button" onclick="stopScan()">Stop</button>
+    </div>
+  </div>
+  <div class="flip-mode">
+    <span class="muted">Flip mode</span>
+    <button type="button" class="btn secondary" id="sc_flip_macro_btn" aria-pressed="true" title="Macro: Σ GEX(strike&lt;spot) + Σ GEX(strike&gt;spot) = 0">Macro Flip</button>
+    <button type="button" class="btn ghost" id="sc_flip_micro_btn" aria-pressed="false" title="Micro: GEXcalls(strike) − GEXputs(strike) = 0">Micro Flip</button>
+  </div>
+  <div class="muted scan-top-note">Window for strikes when pulling GEX.</div>
+  <div class="chip-scroll">
+    <div id="sc_list" class="chip-row"></div>
+  </div>
+</div>
+
+  <div class="card" style="margin-top:12px">
+    <div class="muted" id="sc_timestamp" style="font-style:italic">Scanner results</div>
+    <div class="muted-small" id="sc_sort_mode" style="margin-top:4px">Sort: Score (default)</div>
+    <div id="sc_table_wrap" style="margin-top:8px"></div>
+    <div class="table-note">Click columns to toggle sorting.</div>
+  </div>
+
+<div id="scanner_defaults" data-json='{{ defaults_json | tojson | safe }}' hidden></div>
+<script>
+  function parseDefaults(){
+    try{
+      const raw = JSON.parse(document.getElementById('scanner_defaults')?.dataset.json || '[]');
+      if(Array.isArray(raw)) return raw;
+      if(typeof raw === 'string') {
+        const inner = JSON.parse(raw);
+        if(Array.isArray(inner)) return inner;
+      }
+    }catch(e){}
+    return [];
+  }
+  const DEFAULTS = parseDefaults();
+  const STORE_KEY = 'vanna:scanner';
+  const DEFAULTS_MAPPED = DEFAULTS.map(t=>({symbol:t, window:10}));
+  let tickers = [];
+  let results = [];
+  let scJobId = null;
+  let scPollTimer = null;
+  let sortKey = null;
+  let sortDir = 1; // 1 asc, -1 desc
+  let sortMode = 'score'; // 'asc','desc','natural','score'
+  const FLIP_MODE_KEY = 'scanner:flipmode';
+  const MACRO_TO_MICRO_KEYS = {
+    flip_weekly: 'flip_weekly_micro',
+    flip_monthly: 'flip_monthly_micro',
+    flip_total: 'flip_total_micro',
+    distance_weekly_pct: 'distance_weekly_micro_pct',
+    distance_monthly_pct: 'distance_monthly_micro_pct',
+    distance_total_pct: 'distance_total_micro_pct',
+    score: 'score_micro',
+  };
+  const MICRO_TO_MACRO_KEYS = Object.fromEntries(Object.entries(MACRO_TO_MICRO_KEYS).map(([k,v])=>[v,k]));
+  let scFlipMode = 'macro';
+  try{
+    const savedFlip = localStorage.getItem(FLIP_MODE_KEY);
+    if(savedFlip === 'micro' || savedFlip === 'macro'){ scFlipMode = savedFlip; }
+  }catch(e){}
+  function mapKeyForMode(key, mode){
+    if(!key) return key;
+    if(mode === 'micro' && MACRO_TO_MICRO_KEYS[key]) return MACRO_TO_MICRO_KEYS[key];
+    if(mode !== 'micro' && MICRO_TO_MACRO_KEYS[key]) return MICRO_TO_MACRO_KEYS[key];
+    return key;
+  }
+  function mapSortKey(key){
+    if(!key) return key;
+    if(key === 'top_gex_strike') return 'top_gex_pct';
+    return mapKeyForMode(key, scFlipMode);
+  }
+  function flipModeLabel(){ return scFlipMode === 'micro' ? 'Micro' : 'Macro'; }
+  function flipValue(row, baseKey){
+    const key = mapKeyForMode(baseKey, scFlipMode);
+    return row?.[key];
+  }
+  function distanceValue(row, baseKey){
+    const key = mapKeyForMode(baseKey, scFlipMode);
+    return row?.[key];
+  }
+  function scoreValue(row){
+    return scFlipMode === 'micro' ? row?.score_micro : row?.score;
+  }
+  function syncSortKeyForMode(mode){
+    sortKey = mapKeyForMode(sortKey, mode);
+  }
+  function updateFlipButtons(){
+      const macro = document.getElementById('sc_flip_macro_btn');
+      const micro = document.getElementById('sc_flip_micro_btn');
+      if(macro && micro){
+        const macroActive = scFlipMode !== 'micro';
+        macro.classList.toggle('secondary', macroActive);
+        macro.classList.toggle('flip-active', macroActive);
+        macro.classList.toggle('ghost', !macroActive);
+        macro.setAttribute('aria-pressed', macroActive ? 'true':'false');
+        micro.classList.toggle('secondary', !macroActive);
+        micro.classList.toggle('flip-active', !macroActive);
+        micro.classList.toggle('ghost', macroActive);
+        micro.setAttribute('aria-pressed', macroActive ? 'false':'true');
+      }
+    }
+  function setFlipMode(mode){
+    const next = (mode === 'micro') ? 'micro' : 'macro';
+    scFlipMode = next;
+    try{ localStorage.setItem(FLIP_MODE_KEY, next); }catch(e){}
+    syncSortKeyForMode(next);
+    updateFlipButtons();
+    renderTable();
+  }
+  function normalizeTickers(list){
+    const fallback = Number(document.getElementById('sc_window')?.value || 10) || 10;
+    return (list||[]).map(t=>{
+      if(typeof t === 'string'){ return {symbol: t.toUpperCase(), window: fallback}; }
+      const sym = (t.symbol || t || '').toString().toUpperCase();
+      if(!sym) return null;
+      const wRaw = t.window;
+      const wNum = Number(wRaw);
+      const w = (Number.isFinite(wNum) && wNum > 0) ? wNum : fallback;
+      return {symbol: sym, window: w};
+    }).filter(Boolean);
+  }
+  function loadTickers(){
+    try{
+      const saved = JSON.parse(localStorage.getItem(STORE_KEY)||'null');
+      if(saved && Array.isArray(saved.tickers)) tickers = normalizeTickers(saved.tickers);
+      else if(Array.isArray(saved)) tickers = normalizeTickers(saved);
+    }catch(e){}
+    if(!tickers || !tickers.length) tickers = normalizeTickers(DEFAULTS_MAPPED.slice());
+    else saveTickers(); // persist normalized shape
+  }
+  function saveTickers(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify({tickers})); }catch(e){} }
+  function renderTickers(){
+    const wrap = document.getElementById('sc_list'); if(!wrap) return;
+    const clearBtn = document.getElementById('sc_clear_btn');
+    if(clearBtn) clearBtn.disabled = !tickers.length;
+    if(!tickers.length){ wrap.innerHTML = '<div class="empty-hint">Add tickers to scan.</div>'; return; }
+    wrap.innerHTML = tickers.map(t=>{
+      const sym = (t.symbol||t).toString();
+      const w = t.window ?? 10;
+      return `<span class="scan-chip"><span>${sym}</span>
+        <input type="number" value="${w}" min="1" max="50" step="0.5" style="width:70px;padding:4px;border-radius:6px;border:1px solid #1f2937;background:#0f172a;color:#e5e7eb" onchange="updateTickerWindow('${sym}', this.value)">
+        <button title="Remove" onclick="removeTicker('${sym}')">×</button></span>`;
+    }).join('');
+  }
+  function clearTickers(){
+    tickers = [];
+    saveTickers();
+    renderTickers();
+    renderTable();
+  }
+  function addTicker(){
+    const inp = document.getElementById('sc_input');
+    const v = (inp?.value||'').trim().toUpperCase();
+    if(!v) return;
+    if(!tickers.find(t=>t.symbol===v)){ tickers.push({symbol:v, window: Number(document.getElementById('sc_window')?.value||10)}); saveTickers(); renderTickers(); runScan(); }
+    if(inp) inp.value='';
+  }
+  function removeTicker(sym){
+    tickers = tickers.filter(s=> (s.symbol||s)!==sym);
+    saveTickers(); renderTickers(); renderTable();
+  }
+  function updateTickerWindow(sym, val){
+    tickers = tickers.map(t=> ((t.symbol||t)===sym ? {symbol:sym, window: Number(val)||10} : t));
+    saveTickers();
+  }
+  function fmtPct(v){
+    if(v===null || v===undefined || isNaN(v)) return '-';
+    const n = Number(v);
+    return (n>=0?'+':'') + n.toFixed(2) + '%';
+  }
+  function pctSpan(v){
+    if(v===null || v===undefined || isNaN(v)) return '<span class="muted">-</span>';
+    const n = Number(v);
+    const cls = n>0 ? 'pct-up' : (n<0 ? 'pct-down' : 'pct-flat');
+    return `<span class="${cls}">${(n>=0?'+':'') + n.toFixed(2)}%</span>`;
+  }
+  function tickerWindow(sym){
+    const s = (sym||'').toString().toUpperCase();
+    const found = tickers.find(t=> (t.symbol||t).toString().toUpperCase() === s);
+    if(!found) return null;
+    const w = Number(found.window);
+    return (Number.isFinite(w) && w > 0) ? w : null;
+  }
+  function fmtNum(v){
+    if(v===null || v===undefined || isNaN(v)) return '-';
+    return Number(v).toFixed(2);
+  }
+  function fmtMove(v, pct){
+    if(v===null || v===undefined || isNaN(v)) return 'N/A';
+    const base = '$'+Number(v).toFixed(2);
+    if(pct===null || pct===undefined || isNaN(pct)) return base;
+    const n = Number(pct);
+    const cls = n>0 ? 'pct-up' : (n<0 ? 'pct-down' : 'pct-flat');
+    return `${base} <span class="${cls}">(${(n>=0?'+':'')+n.toFixed(2)}%)</span>`;
+  }
+  function sparkline(vals){
+    if(!Array.isArray(vals) || !vals.length) return '-';
+    const nums = vals.map(Number).filter(v=>!isNaN(v));
+    if(!nums.length) return '-';
+    const w=80,h=24; const min=Math.min(...nums), max=Math.max(...nums); const span=Math.max(1e-6, max-min);
+    const pts = nums.map((v,i)=>[i/(nums.length-1||1)*w, h - ((v-min)/span)*h]);
+    const d = pts.map((p,i)=> (i===0?`M ${p[0]} ${p[1]}`:`L ${p[0]} ${p[1]}`)).join(' ');
+    const last = nums[nums.length-1], first = nums[0];
+    const delta = last - first;
+    const colour = delta>=0 ? '#22d3ee' : '#f87171';
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><path d="${d}" fill="none" stroke="${colour}" stroke-width="2"/><circle cx="${pts[pts.length-1][0]}" cy="${pts[pts.length-1][1]}" r="2" fill="${colour}"/></svg>`;
+  }
+  function flipCell(exp, flip){
+    if(flip===null || flip===undefined || isNaN(flip)) return '-';
+    const tag = exp ? `<div class="muted-small">${exp}</div>` : '';
+    return `<div>${fmtNum(flip)}${tag}</div>`;
+  }
+  function gexTrendCell(val){
+    if(val===null || val===undefined || isNaN(val)) return '<span class="muted">-</span>';
+    const n = Number(val);
+    const arrow = n>0 ? '▲' : (n<0 ? '▼' : '→');
+    const cls = n>0 ? 'trend-up' : (n<0 ? 'trend-down' : 'trend-flat');
+    return `<span class="${cls}">${arrow} ${(n>=0?'+':'')+n.toFixed(1)}%</span>`;
+  }
+  function topGammaCell(strike, pct){
+    if(strike===null || strike===undefined || isNaN(strike)) return '-';
+    let pctLine = '';
+    if(pct!==null && pct!==undefined && !isNaN(pct)){
+      const cls = Number(pct)>=0 ? 'pct-up' : 'pct-down';
+      pctLine = `<div class="${cls}">${fmtPct(pct)}</div>`;
+    }
+    return `<div>${fmtNum(strike)}${pctLine}</div>`;
+  }
+  function distBadge(v){
+    if(v===null || v===undefined || isNaN(v)) return '<span class="scan-badge neutral">-</span>';
+    const cls = Number(v) >= 0 ? 'pos' : 'neg';
+    return `<span class="scan-badge ${cls}">${fmtPct(v)}</span>`;
+  }
+  function sortArrow(key){
+    const mapped = mapSortKey(key);
+    if(sortKey===mapped){
+      if(sortMode==='asc') return ' ▲';
+      if(sortMode==='desc') return ' ▼';
+    }
+    return '';
+  }
+  function symbolHeaderLabel(){
+    const dots = sortMode==='natural' ? ' ⠿' : '';
+    return `Symbol${sortArrow('symbol')}${dots}`;
+  }
+  function headerLabel(key, label){
+    return `${label}${sortArrow(key)}`;
+  }
+  function updateSortLabel(){
+    const el = document.getElementById('sc_sort_mode');
+    if(!el) return;
+    const prettyKey = (key)=>{
+      const labels = {
+        flip_weekly: 'Flip - Weekly (Macro)',
+        flip_weekly_micro: 'Flip - Weekly (Micro)',
+        flip_monthly: 'Flip - Monthly (Macro)',
+        flip_monthly_micro: 'Flip - Monthly (Micro)',
+        flip_total: 'Flip - All (Macro)',
+        flip_total_micro: 'Flip - All (Micro)',
+        distance_weekly_pct: 'Flip Distance - Weekly (Macro)',
+        distance_weekly_micro_pct: 'Flip Distance - Weekly (Micro)',
+        distance_monthly_pct: 'Flip Distance - Monthly (Macro)',
+        distance_monthly_micro_pct: 'Flip Distance - Monthly (Micro)',
+        distance_total_pct: 'Flip Distance - All (Macro)',
+        distance_total_micro_pct: 'Flip Distance - All (Micro)',
+        score: 'Score (Macro)',
+        score_micro: 'Score (Micro)',
+      };
+      return labels[key] || key;
+    };
+    let txt = 'Sort: ';
+    if(sortMode==='natural'){
+      txt += 'Custom order (drag to reorder)';
+    } else if(!sortKey){
+      txt += `Score (${flipModeLabel()})`;
+    } else {
+      const dir = (sortMode==='desc') ? '▼' : '▲';
+      txt += `${prettyKey(sortKey)} ${dir}`;
+    }
+    el.textContent = txt;
+  }
+  function renderTable(){
+    const wrap = document.getElementById('sc_table_wrap'); if(!wrap) return;
+    if(!results.length){ wrap.innerHTML = '<div class="empty-hint">Click refresh to pull gamma data.</div>'; return; }
+    const sorted = results.slice();
+    const effectiveSortKey = mapSortKey(sortKey);
+    if(sortMode==='natural'){
+      const order = new Map();
+  tickers.forEach((t,i)=> order.set((t.symbol||t).toString().toUpperCase(), i));
+  sorted.sort((a,b)=>{
+    const ia = order.has(a.symbol) ? order.get(a.symbol) : 1e9;
+    const ib = order.has(b.symbol) ? order.get(b.symbol) : 1e9;
+    return ia - ib;
+  });
+    } else if(effectiveSortKey){
+      sorted.sort((a,b)=>{
+        if(effectiveSortKey === 'symbol'){
+          const sa = (a.symbol||'').toString().toUpperCase();
+          const sb = (b.symbol||'').toString().toUpperCase();
+          if(!sa && !sb) return 0;
+          if(!sa) return 1;
+          if(!sb) return -1;
+          const cmp = sa.localeCompare(sb);
+          return cmp * sortDir;
+        }
+        const va = a[effectiveSortKey]; const vb = b[effectiveSortKey];
+        const na = (va===null||va===undefined||isNaN(va)) ? null : Number(va);
+        const nb = (vb===null||vb===undefined||isNaN(vb)) ? null : Number(vb);
+        if(na===null && nb===null) return 0;
+        if(na===null) return 1;
+        if(nb===null) return -1;
+        return (na - nb) * sortDir;
+      });
+    } else {
+      sorted.sort((a,b)=> (Math.abs(scoreValue(b)||0) - Math.abs(scoreValue(a)||0)));
+    }
+    const rows = sorted.map(r=>{
+      const change = pctSpan(r.day_change_pct);
+      const ah = (r.ah_change_pct!==null && r.ah_change_pct!==undefined && !isNaN(r.ah_change_pct)) ? `<span class="muted-small">(${pctSpan(r.ah_change_pct)} AH)</span>` : '';
+      const win = tickerWindow(r.symbol);
+      const winTxt = (win===null || win===undefined || isNaN(win)) ? '' : ` (${Number(win)}%)`;
+      const gexHref = `/gexticker/${encodeURIComponent(r.symbol)}${win ? `?window=${encodeURIComponent(win)}` : ''}`;
+      const flipW = flipValue(r, 'flip_weekly');
+      const flipM = flipValue(r, 'flip_monthly');
+      const flipT = flipValue(r, 'flip_total');
+      const distW = distanceValue(r, 'distance_weekly_pct');
+      const distM = distanceValue(r, 'distance_monthly_pct');
+      const distT = distanceValue(r, 'distance_total_pct');
+      const hasMicro = ['flip_weekly_micro','flip_monthly_micro','flip_total_micro'].some(k=> r[k]!==null && r[k]!==undefined && !isNaN(r[k]));
+      const rowClass = (scFlipMode==='micro' && !hasMicro) ? 'scan-row missing-micro' : 'scan-row';
+      return `<tr class="${rowClass}" data-symbol="${r.symbol}">
+        <td class="drag-cell"><span class="drag-handle" draggable="${sortMode==='natural'}" aria-label="Drag to reorder">⠿</span><strong><a href="${gexHref}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${r.symbol}${winTxt}</a></strong></td>
+        <td>${fmtNum(r.spot)}</td>
+        <td>${change} ${ah}</td>
+        <td>${fmtMove(r.exp_move, r.exp_move_pct)}${r.exp_move_expiry ? `<div class="muted-small">${r.exp_move_expiry}</div>`:''}</td>
+        <td>${flipCell(r.weekly_expiry, flipW)}</td>
+        <td>${flipCell(r.monthly_expiry, flipM)}</td>
+        <td>${flipCell(null, flipT)}</td>
+        <td>${distBadge(distW)}</td>
+        <td>${distBadge(distM)}</td>
+        <td>${distBadge(distT)}</td>
+        <td>${topGammaCell(r.top_gex_strike, r.top_gex_pct)}</td>
+        <td>${gexTrendCell(r.gex_trend_pct)}</td>
+        <td>${sparkline(r.oi_trend||[])}</td>
+      </tr>`;
+    }).join('');
+        wrap.innerHTML = `<div style="overflow-x:auto">
+          <table class="scan-table">
+            <thead><tr>
+          <th onclick="setSort('symbol')">${symbolHeaderLabel()}</th>
+          <th onclick="setSort('spot')">${headerLabel('spot','Price')}</th>
+          <th onclick="setSort('day_change_pct')">${headerLabel('day_change_pct','Last')}</th>
+          <th>Expected Move</th>
+          <th onclick="setSort('flip_weekly')">${headerLabel(mapKeyForMode('flip_weekly', scFlipMode),'Flip - Weekly')}</th>
+          <th onclick="setSort('flip_monthly')">${headerLabel(mapKeyForMode('flip_monthly', scFlipMode),'Flip - Monthly')}</th>
+          <th onclick="setSort('flip_total')">${headerLabel(mapKeyForMode('flip_total', scFlipMode),'Flip - All')}</th>
+          <th onclick="setSort('distance_weekly_pct')">${headerLabel(mapKeyForMode('distance_weekly_pct', scFlipMode),'Flip Distance - Weekly')}</th>
+          <th onclick="setSort('distance_monthly_pct')">${headerLabel(mapKeyForMode('distance_monthly_pct', scFlipMode),'Flip Distance - Monthly')}</th>
+          <th onclick="setSort('distance_total_pct')">${headerLabel(mapKeyForMode('distance_total_pct', scFlipMode),'Flip Distance - All')}</th>
+          <th onclick="setSort('top_gex_strike')">${headerLabel('top_gex_strike','Top Gamma Strike')}</th>
+          <th onclick="setSort('gex_trend_pct')">${headerLabel('gex_trend_pct','GEX Trend')}</th>
+          <th>Open Interest Trend</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+        setupDnD();
+        updateSortLabel();
+  }
+  function setSort(key){
+    const realKey = mapSortKey(key);
+    if(sortKey===realKey){
+      if(sortMode==='asc'){ sortMode='desc'; sortDir=-1; }
+      else if(sortMode==='desc'){ sortMode='natural'; sortKey=null; }
+      else { sortMode='asc'; sortDir=1; sortKey=realKey; }
+    } else {
+      sortKey = realKey; sortMode='asc'; sortDir=1;
+    }
+    renderTable();
+  }
+  function setupDnD(){
+    if(sortMode!=='natural'){ return; }
+    const rows = Array.from(document.querySelectorAll('.scan-row'));
+    const handles = Array.from(document.querySelectorAll('.drag-handle'));
+    handles.forEach(h=>{
+      const row = h.closest('.scan-row');
+      const sym = row?.dataset.symbol;
+      if(!row || !sym) return;
+      h.addEventListener('dragstart', ev=>{
+        ev.dataTransfer.effectAllowed = 'move';
+        ev.dataTransfer.setData('text/plain', sym);
+        row.classList.add('dragging');
+      });
+      h.addEventListener('dragend', ()=>{
+        row.classList.remove('dragging');
+        rows.forEach(r=> r.classList.remove('drag-over'));
+      });
+    });
+    rows.forEach(r=>{
+      r.addEventListener('dragover', ev=>{ ev.preventDefault(); r.classList.add('drag-over'); });
+      r.addEventListener('dragleave', ()=> r.classList.remove('drag-over'));
+      r.addEventListener('drop', ev=>{
+        ev.preventDefault();
+        r.classList.remove('drag-over');
+        const src = ev.dataTransfer.getData('text/plain');
+        const dst = r.dataset.symbol;
+        if(!src || !dst || src===dst) return;
+        reorderTickers(src, dst);
+        renderTable();
+      });
+    });
+  }
+  function reorderTickers(src, dst){
+    const arr = tickers.slice();
+    const i = arr.findIndex(t=>(t.symbol||t).toString().toUpperCase()===src);
+    const j = arr.findIndex(t=>(t.symbol||t).toString().toUpperCase()===dst);
+    if(i<0 || j<0) return;
+    const [item] = arr.splice(i,1);
+    arr.splice(j,0,item);
+    tickers = arr;
+    saveTickers();
+  }
+  function updateBar(prog){
+    const bar = document.getElementById('sc_bar');
+    const pct = document.getElementById('sc_bar_pct');
+    const val = Math.max(0, Math.min(1, prog||0));
+    if(bar) bar.style.width = (val*100).toFixed(0)+'%';
+    if(pct) pct.textContent = (val*100).toFixed(0)+'%';
+  }
+  function updateActionButtons(){
+    const refreshBtn = document.getElementById('sc_refresh');
+    if(refreshBtn){
+      refreshBtn.disabled = !!scJobId;
+      refreshBtn.textContent = scJobId ? 'Refresh (running)' : 'Refresh';
+    }
+    const stopBtn = document.querySelector('button[onclick="stopScan()"]');
+    if(stopBtn){ stopBtn.disabled = !scJobId; }
+  }
+  async function runScan(){
+    const statusEl = document.getElementById('sc_status');
+    if(!tickers.length){ if(statusEl) statusEl.textContent='Add tickers to start.'; return; }
+    if(statusEl) statusEl.textContent='Starting...';
+    updateBar(0);
+    const wGlobal = parseFloat(document.getElementById('sc_window')?.value||'10');
+    window.__scanStarted = performance.now();
+    try{
+      const payload = {
+        symbols: tickers.map(t=> ({symbol: (t.symbol||t).toString().toUpperCase(), pct_window: ((t.window||wGlobal)/100.0)})),
+        pct_window: wGlobal/100.0,
+      };
+      const res = await fetch('/api/scanner/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+      if(!res.ok) throw new Error('Start failed');
+      const data = await res.json();
+      scJobId = data.job_id;
+      updateActionButtons();
+      if(statusEl) statusEl.textContent='Scanning...';
+      pollScanner();
+    }catch(e){
+      if(statusEl) statusEl.textContent = 'Error: '+(e?.message||e);
+      scJobId = null;
+      updateActionButtons();
+    }
+  }
+  async function pollScanner(){
+    if(!scJobId) return;
+    try{
+      const r = await fetch(`/api/scanner/status?job_id=${scJobId}`);
+      if(!r.ok) throw new Error('Status failed');
+      const s = await r.json();
+      updateBar(s.progress||0);
+      const statusEl = document.getElementById('sc_status');
+      if(statusEl){
+        const msg = (s.done!==undefined && s.total!==undefined) ? `${s.done}/${s.total}${s.last?(' • '+s.last):''}` : '';
+        statusEl.textContent = (s.status||'') + (msg?' — '+msg:'');
+      }
+      if(s.status === 'done'){
+        const res = await fetch(`/api/scanner/result?job_id=${scJobId}`);
+        if(res.status===204) return;
+        const data = await res.json();
+        results = data.results || [];
+        const ts=document.getElementById('sc_timestamp');
+        const dur = data.duration_secs || ((performance.now() - (window.__scanStarted||performance.now()))/1000);
+        if(ts){
+          if(data.as_of){
+            ts.textContent = `Scanner results as of ${data.as_of}${dur ? ` (loaded in ${dur.toFixed(1)}s)` : ''}`;
+          } else {
+            ts.textContent = `Scanner results${dur ? ` (loaded in ${dur.toFixed(1)}s)` : ''}`;
+          }
+        }
+        renderTable(); updateBar(1);
+        scJobId = null;
+        updateActionButtons();
+        return;
+      }
+      if(s.status === 'cancelled' || s.status === 'error'){
+        scJobId = null;
+        updateActionButtons();
+        return;
+      }
+      scPollTimer = setTimeout(pollScanner, 900);
+    }catch(e){
+      const statusEl = document.getElementById('sc_status');
+      if(statusEl) statusEl.textContent = 'Error: '+(e?.message||e);
+      scJobId = null;
+      updateActionButtons();
+    }
+  }
+  async function stopScan(nonBlocking){
+    if(!scJobId) return;
+    const payload = JSON.stringify({job_id: scJobId});
+    if(nonBlocking && navigator.sendBeacon){
+      try { navigator.sendBeacon('/api/scanner/stop', new Blob([payload], {type:'application/json'})); } catch(e){}
+    } else {
+      try{ await fetch('/api/scanner/stop', {method:'POST', headers:{'Content-Type':'application/json'}, body: payload}); }catch(e){}
+    }
+    scJobId = null;
+    if(scPollTimer) clearTimeout(scPollTimer);
+    updateBar(0);
+    const statusEl = document.getElementById('sc_status'); if(statusEl) statusEl.textContent='Stopped';
+    updateActionButtons();
+  }
+  window.addEventListener('beforeunload', ()=>{ stopScan(true); });
+  try {
+    const home = document.querySelector('.home-link');
+    if(home){ home.addEventListener('click', ()=> stopScan(true)); }
+  } catch(e){}
+  loadTickers(); renderTickers(); updateFlipButtons(); renderTable(); updateActionButtons(); setTimeout(runScan, 150);
+  try{
+    document.getElementById('sc_flip_macro_btn')?.addEventListener('click', ()=> setFlipMode('macro'));
+    document.getElementById('sc_flip_micro_btn')?.addEventListener('click', ()=> setFlipMode('micro'));
+  }catch(e){}
+  </script>
+{% endblock %}

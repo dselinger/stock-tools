@@ -1,0 +1,33 @@
+<div style="display:flex;align-items:center;gap:12px;justify-content:space-between;">
+  <div style="display:flex;align-items:center;gap:12px;">
+    <a href="/" class="home-link" aria-label="Home">&#8962;</a>
+    <h2 id="{{ prefix }}_symbol" style="margin:0">{{ title }}</h2>
+    <label class="muted">Expiry</label>
+    <select id="{{ prefix }}_expiry_sel" class="select-input select-sm"></select>
+    <span class="muted" id="{{ prefix }}_expiry"></span>
+    <span class="muted" id="{{ prefix }}_spot"></span>
+    {% if prefix == 'h' %}
+    <span class="muted" id="h_refreshed"></span>
+    <span class="muted" id="h_metrics"></span>
+    {% else %}
+    <span class="muted" id="gh_change"></span>
+    <span class="muted" id="gh_refreshed"></span>
+    <span class="muted" id="gh_metrics"></span>
+    {% endif %}
+  </div>
+  <div style="position:relative"> 
+    <button class="btn secondary" id="{{ menu_btn }}" type="button" style="position:relative; z-index:10001;" onclick="{{ menu_toggle }}">☰</button>
+    <div id="{{ menu_panel }}" class="card" style="display:none;position:fixed;right:24px;top:68px;min-width:240px;padding:8px; z-index:10000;"> 
+      {% if prefix == 'h' %}
+      <div><button class="btn secondary" style="width:100%" onclick="switchToGex(); {{ menu_toggle }}(false);">GEX</button></div>
+      {% else %}
+      <div><button class="btn secondary" style="width:100%" onclick="gSwitchToVanna(); {{ menu_toggle }}(false);">Vanna</button></div>
+      {% endif %}
+      <div style="margin-top:6px"><a class="btn secondary" style="width:100%;display:block;text-align:center" href="/events/{{ symbol }}" target="_blank" rel="noopener" onclick="{{ menu_toggle }}(false);">{{ symbol }} Events</a></div>
+      <div style="margin-top:6px"><a class="btn secondary" style="width:100%;display:block;text-align:center" href="/econ" onclick="{{ menu_toggle }}(false);">Economic Events</a></div>
+      <div class="muted" style="margin:8px 0 4px 0;border-top:1px solid #334155;padding-top:6px">TradingView</div>
+      <div><button class="btn secondary" style="width:100%" onclick="{{ pairs_fn }}; {{ menu_toggle }}(false);">Pairs</button></div>
+      <div style="margin-top:6px"><button class="btn secondary" style="width:100%" onclick="{{ pine_fn }}; {{ menu_toggle }}(false);">Pine</button></div>
+    </div>
+  </div>
+</div>

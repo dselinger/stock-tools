@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block content %}
+<h2>Unified Debug Console</h2>
+<div class="card" style="margin-top:10px"> 
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+    <button class="btn secondary" onclick="reloadLogs()">Refresh</button>
+    <button class="btn secondary" onclick="clearLogs()">Clear</button>
+    <select id="dbg_limit" class="select-input select-sm">
+      <option value="200">200</option>
+      <option value="500" selected>500</option>
+      <option value="1000">1000</option>
+    </select>
+    <label class="muted" style="margin-left:8px"><input type="checkbox" id="dbg_auto" checked> Auto</label>
+    <label class="muted" style="margin-left:8px"><input type="checkbox" id="dbg_enabled"> Full logging</label>
+  </div>
+  <div style="margin:6px 0"></div>
+  <div id="ulog_wrap" style="max-height:70vh;overflow:auto"></div>
+</div>
+<script>
+  const OPEN_SET = new Set();
+  let LAST_LOGS = [];
+  function statusBadge(s){ const c = (s==='error'?'#b91c1c':(s==='success'?'#065f46':'#334155')); const t=(s==='error'?'#fee2e2':(s==='success'?'#d1fae5':'#cbd5e1')); return `<span style="border:1px solid ${c};color:${t};background:#0f172a;padding:2px 6px;border-radius:999px;font-size:.75rem">${s||'info'}</span>`; }
+  function keyFor(it){ return (it.meta&&it.meta.job_id?('job:'+it.meta.job_id):'')+'|'+(it.route||'')+'|'+(it.ts||''); }
+  function groupItems(items){
+    const grouped = [];
+    const polls = new Map(); // key: route+job_id -> {count,last,first}
+    for(const it of items){
+      const isPoll = (it.route==='/api/status' || it.route==='/api/gex/status') && (it.message||'')==='poll' && it.meta && it.meta.job_id;
+      if(isPoll){
+        const k = (it.route||'')+'|'+it.meta.job_id;
+        const g = polls.get(k) || {route: it.route, job_id: it.meta.job_id, count:0, first: it.ts, last: it.ts, last_meta: it.meta, status: it.status||'info'};
+        g.count += 1; g.last = it.ts; g.last_meta = it.meta; polls.set(k, g);
+      } else {
+        grouped.push({type:'event', item: it});
+      }
+    }
+    for(const [k,g] of polls.entries()){
+      grouped.push({type:'poll', key:k, ts:g.last, route:g.route, status:g.status, meta:{job_id:g.job_id, count:g.count, first:g.first, last:g.last, last_meta:g.last_meta}, message: `poll x${g.count}`});
+    }
+    grouped.sort((a,b)=> String(a.ts||'').localeCompare(String(b.ts||'')) );
+    return grouped;
+  }
+  function buildFilters(items){
+    const sel = document.getElementById('f_route');
+    if(sel){
+      const prev = sel.value || 'all';
+      const routes = Array.from(new Set(items.map(it=>it.route||'').filter(Boolean))).sort();
+      sel.innerHTML = '<option value="all" selected>All routes</option>' + routes.map(r=>`<option value="${r}">${r}</option>`).join('');
+      sel.value = prev;
+    }
+    const st = document.getElementById('f_type');
+    if(st){
+      const prevt = st.value || 'all';
+      const types = Array.from(new Set(items.map(it=> (it.message||'')).filter(Boolean))).sort();
+      st.innerHTML = '<option value="all" selected>All types</option>' + types.map(t=>`<option value="${t}">${t}</option>`).join('');
+      st.value = prevt;
+    }
+  }
+  function applyFilters(items){
+    const jobEl = document.getElementById('f_job');
+    const typeEl = document.getElementById('f_type');
+    const timeEl = document.getElementById('f_time');
+    const job = (jobEl && jobEl.value) ? jobEl.value : 'all';
+    const ftype = (typeEl && typeEl.value) ? typeEl.value : 'all';
+    const tsec = parseInt((timeEl && timeEl.value) ? timeEl.value : '0',10)||0;
+    const now = Date.now();
+    let arr = items.slice();
+    if(job!=='all') arr = arr.filter(it=> (it.meta && (it.meta.job_id||it.meta.jobId)) === job);
+    if(ftype!=='all') arr = arr.filter(it=> (it.message||'')===ftype);
+    if(tsec>0) arr = arr.filter(it=> { try { const t = Date.parse(it.ts||''); return !isNaN(t) && (now - t) <= tsec*1000; } catch(e){ return true; } });
+    return arr;
+  }
+  function renderLogs(items){
+    LAST_LOGS = items || [];
+    buildFilters(LAST_LOGS);
+    const filtered = applyFilters(LAST_LOGS);
+    const groups = groupItems(filtered);
+    const wrap = document.getElementById('ulog_wrap'); if(!wrap) return;
+    if(!groups || !groups.length){ wrap.innerHTML = '<div class="muted">(no logs yet)</div>'; return; }
+    const prevTime = document.getElementById('f_time')?.value || '0';
+    const prevJob = document.getElementById('f_job')?.value || 'all';
+    const prevType = document.getElementById('f_type')?.value || 'all';
+    const jobIds = Array.from(new Set((LAST_LOGS||[]).map(it=> (it.meta && (it.meta.job_id||it.meta.jobId))).filter(Boolean))).sort();
+    const types = Array.from(new Set((LAST_LOGS||[]).map(it=> (it.message||'')).filter(Boolean))).sort();
+    const timeOpts = [ {v:'0',t:'All time'}, {v:'30',t:'Last 30s'}, {v:'60',t:'Last 60s'}, {v:'300',t:'Last 300s'} ];
+  const header = `
+      <div style="display:grid;grid-template-columns:220px minmax(160px,1fr) minmax(160px,1fr) 2fr;gap:10px;font-weight:600;margin-bottom:6px">
+        <div>Timestamp</div><div>Job ID</div><div>Event Type</div><div>Description</div>
+      </div>
+      <div style="display:grid;grid-template-columns:220px minmax(160px,1fr) minmax(160px,1fr) 2fr;gap:10px;margin-bottom:6px">
+        <div><select id="f_time" onchange="onFilterChange()" class="select-input select-sm" style="width:100%">${timeOpts.map(o=>`<option value=\"${o.v}\" ${prevTime===o.v?'selected':''}>${o.t}</option>`).join('')}</select></div>
+        <div><select id="f_job" onchange="onFilterChange()" class="select-input select-sm" style="width:100%"><option value=\"all\" ${prevJob==='all'?'selected':''}>All jobs</option>${jobIds.map(j=>`<option value=\"${j}\" ${prevJob===String(j)?'selected':''}>${j}</option>`).join('')}</select></div>
+        <div><select id="f_type" onchange="onFilterChange()" class="select-input select-sm" style="width:100%"><option value=\"all\" ${prevType==='all'?'selected':''}>All types</option>${types.map(t=>`<option value=\"${t}\" ${prevType===t?'selected':''}>${t}</option>`).join('')}</select></div>
+        <div></div>
+      </div>`;
+    const rows = groups.map((g,idx)=>{
+      const ts = g.ts || (g.item&&g.item.ts) || '';
+      const st = (g.status || (g.item&&g.item.status) || 'info');
+      const type = g.message || (g.item&&g.item.message) || '';
+      const meta = g.meta || (g.item&&g.item.meta) || {};
+      const jobId = (meta && (meta.job_id || meta.jobId)) || '';
+      let desc = '';
+      if (g.type==='poll') {
+        const cnt = meta.count || 0; const js = (meta.last_meta && meta.last_meta.job_status) || ''; const pr = (meta.last_meta && meta.last_meta.progress);
+        desc = `poll x${cnt}` + (js?` status=${js}`:'') + (pr!=null?` progress=${Math.round((pr||0)*100)}%`:'' );
+      } else if (type==='cache_hit') {
+        const ttl = (meta && meta.ttl!=null)? meta.ttl: '';
+        desc = `cache hit` + (ttl!==''?` (ttl=${ttl}s)`: '');
+      } else if (type==='request' && ((g.item&&g.item.route)==='/api/start' || (g.item&&g.item.route)==='/api/gex/start')) {
+        const sym = meta && meta.symbol; const ex = meta && meta.expiry; const no = meta && meta.next_only;
+        desc = `request` + (sym?` symbol=${sym}`:'') + (ex?` exp=${ex}`:'') + (no!=null?` next=${no}`:'');
+      } else {
+        desc = type || '';
+      }
+      const key = (g.type==='poll') ? ('poll:'+g.key) : keyFor(g.item);
+      const isOpen = OPEN_SET.has(key);
+      const metaStr = JSON.stringify(meta||{}, null, 2);
+      const errIcon = (String(st).toLowerCase()==='error' || String(type).toLowerCase().includes('error')) ? '<span title=\"error\" style=\"display:inline-block;width:16px;height:16px;line-height:16px;border:1px solid #b91c1c;color:#fee2e2;background:#7f1d1d;border-radius:50%;text-align:center;font-weight:700;margin-left:6px\">!</span>' : '';
+      return `
+        <div class="row" data-key="${key}" style="border-bottom:1px solid #1f2937;padding:6px 4px;cursor:pointer" onclick="toggleDetail('${key}')">
+          <div style="display:grid;grid-template-columns: 220px minmax(160px,1fr) minmax(160px,1fr) 2fr;gap:10px;align-items:center">
+            <div class="muted">${ts}</div>
+            <div class="muted" style="overflow-wrap:anywhere;word-break:break-word">${jobId||''}</div>
+            <div class="muted">${type||''} ${errIcon}</div>
+            <div>${desc||''}</div>
+          </div>
+          <div id="ud_${key}" class="muted" style="display:${isOpen?'block':'none'};margin-top:6px"><pre style="white-space:pre-wrap">${metaStr}</pre></div>
+        </div>`;
+    }).join('');
+    wrap.innerHTML = header + rows;
+  }
+  function toggleDetail(key){ const el = document.getElementById('ud_'+key); if(!el) return; const on = (el.style.display==='none'||!el.style.display); el.style.display = on?'block':'none'; if(on) OPEN_SET.add(key); else OPEN_SET.delete(key); }
+  function onFilterChange(){ renderLogs(LAST_LOGS); }
+  async function fetchLogs(){
+    const lim = parseInt(document.getElementById('dbg_limit').value||'500',10)||500;
+    const r = await fetch('/api/debug/logs?limit='+lim);
+    if(!r.ok) { renderLogs([]); return; }
+    const j = await r.json(); renderLogs(j.logs||[]);
+  }
+  async function fetchConfig(){ try { const r=await fetch('/api/debug/config'); if(!r.ok) return; const j=await r.json(); const cb=document.getElementById('dbg_enabled'); if(cb) cb.checked = !!j.enabled; } catch(e){} }
+  async function setEnabled(en){ try { await fetch('/api/debug/logging', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({enabled: !!en})}); } catch(e){} }
+  async function clearLogs(){ try { await fetch('/api/debug/clear', {method:'POST'}); reloadLogs(); } catch(e){} }
+  function reloadLogs(){ fetchLogs(); fetchConfig(); }
+  document.getElementById('dbg_enabled').addEventListener('change', (e)=> setEnabled(e.target.checked));
+  setInterval(()=>{ if(document.getElementById('dbg_auto').checked) fetchLogs(); }, 1500);
+  reloadLogs();
+</script>
+{% endblock %}
