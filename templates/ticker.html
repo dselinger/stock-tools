@@ -1,703 +1,1408 @@
 {% extends 'base.html' %}
 {% block content %}
 
-    <div class="page-head">
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-        <a href='/' class='home-link' aria-label='Home'>&#8962;</a>
-        <div class="head-titles">
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <h2 id="h_symbol" data-symbol="{{ symbol }}" style="margin:0">{{ symbol or 'Ticker' }}</h2>
-            <span class="head-chip">Vanna</span>
+<style>
+body{--page-accent:#34c98b;--page-accent-rgb:52, 201, 139;--page-accent-soft:rgba(52,201,139,0.12);--page-accent-glow:rgba(52,201,139,0.22);--page-accent-ink:#07160f}
+.vanna-compact-card { display:flex; flex-direction:column; gap:12px; }
+.vanna-metric-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.vanna-search-card { gap:8px !important; padding:16px 18px !important; }
+.vanna-search-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:14px; }
+.vanna-search-primary { display:flex; align-items:end; gap:10px; min-width:0; flex-wrap:wrap; }
+.vanna-search-field { display:flex; align-items:center; gap:8px; min-width:0; }
+.vanna-search-field label { white-space:nowrap; }
+.vanna-search-field input { min-width:0; }
+.vanna-search-field--ticker { flex:0 0 108px; }
+.vanna-search-field--window { flex:0 0 148px; }
+.vanna-search-actions { display:flex; align-items:center; gap:10px; min-width:0; justify-content:flex-end; flex-wrap:nowrap; }
+.vanna-progress-inline { display:flex; align-items:center; gap:10px; min-width:0; flex:0 1 220px; margin-right:2px; }
+.vanna-progress-inline .progress-sm { flex:1 1 160px; min-width:140px; }
+.vanna-progress-pct { min-width:56px; font-variant-numeric:tabular-nums; color:#cbd5e1; }
+.vanna-card-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.vanna-compact-card .meta-tile { min-height:0; padding:10px 12px; }
+.vanna-compact-card .meta-value { font-size:1rem; }
+.vanna-compact-card .meta-subvalue { font-size:0.82rem; }
+.vanna-settings-btn { display:inline-flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:10px; border:1px solid rgba(var(--page-accent-rgb),0.18); background:rgba(15,23,42,0.92); color:#f8fafc; box-shadow:inset 0 0 0 1px rgba(148,163,184,0.08); cursor:pointer; font-size:22px; line-height:1; font-weight:700; }
+.vanna-settings-btn:hover { border-color:rgba(var(--page-accent-rgb),0.3); color:#ffffff; background:rgba(15,23,42,1); }
+.vanna-gear-glyph { transform:translateY(-1px); }
+.vanna-context-strip { margin-top:12px; padding:12px 14px; border:1px solid rgba(var(--page-accent-rgb),0.16); border-radius:12px; background:linear-gradient(180deg, rgba(15,23,42,0.78), rgba(15,23,42,0.62)); display:flex; flex-direction:column; gap:10px; box-shadow:inset 0 1px 0 rgba(255,255,255,0.02); }
+.vanna-context-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.vanna-context-group { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; }
+.vanna-context-label { color:#8fa1b8; font-size:0.82rem; text-transform:uppercase; letter-spacing:0.04em; }
+.vanna-context-value { color:#e5e7eb; font-size:0.93rem; line-height:1.4; }
+.vanna-context-sep { color:#475569; }
+.vanna-context-secondary { color:#cbd5e1; font-size:0.88rem; }
+.vanna-inline-stat { display:inline-flex; align-items:baseline; gap:6px; padding:4px 0; }
+.vanna-inline-stat strong { color:#f8fafc; font-size:0.94rem; font-weight:700; }
+.positive { color:#86efac !important; }
+.negative { color:#fca5a5 !important; }
+.mini-help { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:999px; border:1px solid #334155; color:#8a98ad; font-size:11px; cursor:help; margin-left:6px; }
+.mini-help:hover { color:#e5e7eb; border-color:#64748b; }
+.vanna-weight-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:8px; }
+.vanna-inline-note { padding:10px 12px; border:1px solid rgba(var(--page-accent-rgb),0.12); border-radius:10px; background:rgba(15,23,42,0.55); color:#cbd5e1; line-height:1.45; }
+.vanna-options-modal { display:none; position:fixed; inset:0; background:rgba(11,15,20,0.72); z-index:10011; padding:24px; align-items:center; justify-content:center; }
+.vanna-options-card { width:min(920px,100%); max-height:84vh; overflow:auto; }
+.vanna-options-tabs { display:flex; gap:8px; flex-wrap:wrap; margin-top:16px; }
+.vanna-options-tab { border-radius:999px; padding:8px 14px; }
+.vanna-options-panel { margin-top:18px; }
+.vanna-options-panel[hidden] { display:none; }
+.vanna-options-copy-row { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+.vanna-options-footer { display:flex; justify-content:flex-end; gap:10px; margin-top:18px; flex-wrap:wrap; position:sticky; bottom:0; padding-top:14px; background:linear-gradient(180deg, rgba(17,24,39,0), rgba(17,24,39,0.96) 24%, rgba(17,24,39,0.98)); }
+.vanna-toast { position:fixed; right:20px; bottom:20px; z-index:10030; padding:10px 14px; border-radius:10px; border:1px solid #334155; background:rgba(15,23,42,0.94); color:#e5e7eb; box-shadow:0 12px 40px rgba(2,6,23,0.4); opacity:0; transform:translateY(6px); pointer-events:none; transition:opacity 160ms ease, transform 160ms ease; }
+.vanna-toast.show { opacity:1; transform:translateY(0); }
+.details-section { margin-top:18px; }
+.details-list { display:grid; gap:8px; }
+.details-item { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:8px 10px; border:1px solid rgba(var(--page-accent-rgb),0.12); border-radius:10px; background:rgba(15,23,42,0.55); }
+.details-item .meta-label { margin:0; }
+.details-item .meta-subvalue { text-align:right; }
+.details-note { padding:10px 12px; border-left:3px solid #38bdf8; background:rgba(15,23,42,0.55); border-radius:8px; color:#cbd5e1; }
+.details-pre { margin:0; padding:10px 12px; border:1px solid rgba(var(--page-accent-rgb),0.12); border-radius:10px; background:rgba(15,23,42,0.55); color:#cbd5e1; white-space:pre-wrap; word-break:break-word; font-size:0.84rem; line-height:1.45; }
+.details-tags { display:flex; flex-wrap:wrap; gap:6px; }
+.details-tag { border:1px solid rgba(var(--page-accent-rgb),0.14); border-radius:999px; padding:4px 8px; font-size:0.8rem; color:#cbd5e1; background:rgba(15,23,42,0.65); }
+@media (max-width: 1200px) {
+  .vanna-metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .vanna-search-row { grid-template-columns:1fr; }
+  .vanna-search-actions { justify-content:flex-start; flex-wrap:wrap; }
+  .vanna-progress-inline { flex:1 1 240px; }
+}
+@media (max-width: 720px) {
+  .vanna-metric-grid { grid-template-columns:1fr; }
+  .vanna-options-modal { padding:14px; }
+  .vanna-settings-btn { width:42px; height:42px; }
+  .vanna-search-row, .vanna-search-primary, .vanna-search-actions { align-items:stretch; }
+  .vanna-search-actions { width:100%; flex-wrap:wrap; justify-content:flex-start; }
+  .vanna-progress-inline { width:100%; margin-left:0; }
+  .vanna-progress-inline .progress-sm { flex:1 1 auto; min-width:0; }
+  .vanna-search-field { width:100%; }
+  .vanna-search-field input, .vanna-search-actions .btn { width:100%; }
+  .vanna-progress-pct { min-width:auto; }
+}
+</style>
+
+<div class="page-head">
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+    <a href='/' class='home-link' aria-label='Home'>&#8962;</a>
+    <div class="head-titles">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <h2 id="h_symbol" data-symbol="{{ symbol }}" style="margin:0">{{ symbol or 'Ticker' }} — Vanna</h2>
+        <span class="head-chip">Vanna</span>
+      </div>
+    </div>
+  </div>
+  <div class="head-actions" style="position:relative">
+    <button class="btn secondary" id="menu_btn" type="button" style="position:relative; z-index:10001;" onclick="toggleMenu()">☰</button>
+    <div id="menu_panel" class="card app-menu-panel" style="display:none;position:fixed;right:24px;top:68px;min-width:240px;padding:8px; z-index:10000;">
+      <div><button class="btn secondary" style="width:100%" onclick="switchToGex(); toggleMenu(false);">GEX</button></div>
+      <div style="margin-top:6px"><a class="btn secondary" style="width:100%;display:block;text-align:center" href="/events/{{ symbol }}" target="_blank" rel="noopener" onclick="toggleMenu(false);">{{ symbol or 'Ticker' }} Events</a></div>
+      <div style="margin-top:6px"><a class="btn secondary" style="width:100%;display:block;text-align:center" href="/econ" onclick="toggleMenu(false);">Economic Events</a></div>
+      <div class="muted" style="margin:8px 0 4px 0;border-top:1px solid #334155;padding-top:6px">TradingView</div>
+      <div><button class="btn secondary" style="width:100%" onclick="copyPairs(); toggleMenu(false);">Pairs</button></div>
+      <div style="margin-top:6px"><button class="btn secondary" style="width:100%" onclick="copyPine(); toggleMenu(false);">Pine</button></div>
+    </div>
+  </div>
+</div>
+
+<div id="vanna_context" class="vanna-context-strip">
+  <div class="vanna-context-row">
+    <div class="vanna-context-group">
+      <label class="vanna-context-label" for="h_expiry_sel">Expiry</label>
+      <select id="h_expiry_sel" class="select-input select-sm"></select>
+    </div>
+    <span class="vanna-context-sep">•</span>
+    <div class="vanna-context-group">
+      <label class="vanna-context-label" for="expiry_mode">Scope</label>
+      <select id="expiry_mode" class="select-input select-sm">
+        <option value="current" selected>Current Expiration</option>
+        <option value="all">All Expirations</option>
+      </select>
+    </div>
+    <span class="vanna-context-sep">•</span>
+    <div class="vanna-context-group">
+      <span class="vanna-context-label">Weighting</span>
+      <span class="vanna-context-value" id="v_ctx_weight">OI</span>
+    </div>
+    <span class="vanna-context-sep">•</span>
+    <div class="vanna-context-group">
+      <span class="vanna-context-label">Updated</span>
+      <span class="vanna-context-value" id="v_ctx_updated">—</span>
+    </div>
+  </div>
+  <div class="vanna-context-row vanna-context-secondary">
+    <span class="vanna-inline-stat"><span class="vanna-context-label">Spot</span><strong id="v_ctx_spot">—</strong></span>
+    <span class="vanna-context-sep">•</span>
+    <span class="vanna-inline-stat"><span class="vanna-context-label">Day</span><strong id="v_ctx_day">—</strong></span>
+    <span class="vanna-context-sep">•</span>
+    <span class="vanna-inline-stat"><span class="vanna-context-label">After Hours</span><strong id="v_ctx_ah">—</strong></span>
+  </div>
+</div>
+
+<div id="controls" style="margin-top:12px">
+  <form id="runForm" onsubmit="startRun(event)" class="ticker-form">
+    <div class="options-grid" style="display:flex;gap:18px;align-items:stretch;flex-wrap:wrap;width:100%">
+      <div class="card options-card vanna-search-card" style="flex:0.84 1 460px;min-width:300px;display:flex;flex-direction:column">
+        <div class="card-title" style="margin:0">Search Options</div>
+        <div class="vanna-search-row">
+          <div class="vanna-search-primary">
+            <div class="vanna-search-field vanna-search-field--ticker">
+              <label class="muted" for="symbol">Ticker</label>
+              <input type="text" id="symbol" value="{{ symbol }}" placeholder="SPX, NVDA" required style="width:100%">
+            </div>
+            <div class="vanna-search-field vanna-search-field--window">
+              <label class="muted" for="window_input">Window</label>
+              <div class="suffix-input" style="width:100%;position:relative;display:inline-flex;align-items:center">
+                <input type="number" id="window_input" class="num" value="10" min="0.01" step="0.01" style="width:100%;padding-right:26px">
+                <span class="suffix" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);pointer-events:none;white-space:nowrap">%</span>
+              </div>
+            </div>
           </div>
-          <div class="head-desc" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <label class="muted" for="h_expiry_sel">Expiry</label>
-            <select id="h_expiry_sel" class="select-input select-sm"></select>
-            <label class="muted" for="expiry_mode">Scope</label>
-            <select id="expiry_mode" class="select-input select-sm">
-              <option value="current" selected>Current expiration</option>
-              <option value="all">All expirations</option>
-            </select>
+          <div class="vanna-search-actions">
+            <div class="vanna-progress-inline">
+              <div class="progress-sm"><div class="bar-sm" id="bar_sm"></div></div>
+              <span class="vanna-progress-pct" id="bar_pct">0%</span>
+              <span class="muted" id="status">Idle</span>
+            </div>
+            <button class="btn run-btn" id="run_btn" type="submit">Run</button>
+            <button class="btn stop-btn" id="stop_btn" type="button" onclick="stopRun()">Stop</button>
           </div>
         </div>
       </div>
-      <div class="head-actions" style="position:relative"> 
-        <button class="btn secondary" id="menu_btn" type="button" style="position:relative; z-index:10001;" onclick="toggleMenu()">☰</button>
-        <div id="menu_panel" class="card" style="display:none;position:fixed;right:24px;top:68px;min-width:240px;padding:8px; z-index:10000;"> 
-          <div><button class="btn secondary" style="width:100%" onclick="switchToGex(); toggleMenu(false);">GEX</button></div>
-          <div style="margin-top:6px"><a class="btn secondary" style="width:100%;display:block;text-align:center" href="/events/{{ symbol }}" target="_blank" rel="noopener" onclick="toggleMenu(false);">{{ symbol or 'Ticker' }} Events</a></div>
-          <div style="margin-top:6px"><a class="btn secondary" style="width:100%;display:block;text-align:center" href="/econ" onclick="toggleMenu(false);">Economic Events</a></div>
-          <div class="muted" style="margin:8px 0 4px 0;border-top:1px solid #334155;padding-top:6px">TradingView</div>
-          <div><button class="btn secondary" style="width:100%" onclick="copyPairs(); toggleMenu(false);">Pairs</button></div>
-          <div style="margin-top:6px"><button class="btn secondary" style="width:100%" onclick="copyPine(); toggleMenu(false);">Pine</button></div>
+      <div class="card view-card vanna-compact-card" style="flex:1.38 1 620px;min-width:440px">
+        <div class="vanna-card-head">
+          <div class="card-title" style="margin:0">Vanna Details</div>
+          <button class="vanna-settings-btn" type="button" id="v_options_btn" title="Vanna Options" aria-label="Open Vanna Options" onclick="vOpenOptions()">
+            <span class="vanna-gear-glyph" aria-hidden="true">&#9881;</span>
+          </button>
+        </div>
+        <div class="vanna-metric-grid">
+          <div class="meta-tile">
+            <div class="meta-label">Net Vanna</div>
+            <div class="meta-value" id="h_net">—</div>
+            <div class="meta-subvalue" id="h_net_delta">Delta vs last —</div>
+          </div>
+          <div class="meta-tile">
+            <div class="meta-label">Open Interest</div>
+            <div class="meta-value" id="h_oi">—</div>
+          </div>
+          <div class="meta-tile">
+            <div class="meta-label">IV Median</div>
+            <div class="meta-value" id="h_iv">—</div>
+          </div>
+          <div class="meta-tile">
+            <div class="meta-label">Weighting Mode</div>
+            <div class="meta-value" id="v_details_weight">OI</div>
+            <div class="meta-subvalue">Managed in Vanna Options</div>
+          </div>
         </div>
       </div>
+    </div>
+  </form>
+  <div id="error_banner" class="alert" style="display:none;margin-top:10px"></div>
+</div>
+
+<div class="row" style="margin-top:18px">
+  <div class="card chart-card"><h3>Chart A — Vanna by Strike (Calls vs Puts)</h3><div id="chart_net" style="height:660px"></div></div>
+  <div class="card chart-card"><h3>Chart B — Accumulated Net Vanna</h3><div id="chart_split" style="height:660px"></div></div>
+</div>
+
+<div class="card" style="display:none">
+  <div style="display:flex;align-items:center;justify-content:space-between;">
+    <h3 id="dbg_title" style="cursor:pointer" onclick="toggleDebug()">▸ Debug Console</h3>
+    <button class="btn secondary" type="button" onclick="toggleDebug()" id="dbg_toggle">Show</button>
+  </div>
+  <div id="debug_wrap" style="display:none">
+    <div class="logs" id="debug_logs" style="height:220px"></div>
+  </div>
+</div>
+
+<div id="v_options_modal" class="vanna-options-modal app-modal-backdrop">
+  <div class="card vanna-options-card app-modal-card">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+      <div>
+        <h3 style="margin:0">Vanna Options</h3>
+        <div class="muted" style="margin-top:8px">Advanced Vanna settings live here. Expiry, scope, and window stay on the page because the charts follow that query context.</div>
+      </div>
+      <button class="btn secondary" type="button" onclick="vCloseOptions()">Close</button>
+    </div>
+    <div class="vanna-options-tabs" role="tablist" aria-label="Vanna Options Sections">
+      <button class="btn secondary vanna-options-tab" type="button" id="v_options_tab_settings" onclick="vSetOptionsTab('settings')">Settings</button>
+      <button class="btn secondary vanna-options-tab" type="button" id="v_options_tab_details" onclick="vSetOptionsTab('details')">Full Details</button>
     </div>
 
-  <div id="controls" style="margin-top:12px">
-<form id="runForm" onsubmit="startRun(event)" class="ticker-form">
-  <div class="options-grid" style="display:flex;gap:18px;align-items:stretch;flex-wrap:wrap;width:100%">
-    <div class="card options-card" style="flex:0 0 calc((100% - 54px) / 4);min-width:220px;display:flex;flex-direction:column;gap:10px">
-      <div class="card-title" style="margin:0">Search Options</div>
-      <div class="control-subrow muted-small card-subtext" style="display:grid;grid-template-columns:140px 100px 140px;column-gap:16px;align-items:center;justify-items:start;margin:0">
-        <div style="grid-column:1 / span 2">Ticker and window size</div>
-        <label class="spot-toggle" for="spot_override_toggle" style="grid-column:3">
-          <input type="checkbox" id="spot_override_toggle">
-          <span>Spot override</span>
-        </label>
-      </div>
-      <div class="control-row form-row" style="display:grid;grid-template-columns:140px 100px 140px;column-gap:16px;align-items:center;justify-items:start">
-        <div class="field-ticker">
-          <input type="text" id="symbol" value="{{ symbol }}" placeholder="Ticker (e.g. SPX, NVDA)" required style="width:140px">
-        </div>
-        <div class="field-window">
-          <div class="suffix-input" style="width:100px;position:relative;display:inline-flex;align-items:center">
-            <input type="number" id="window_input" class="num" value="10" min="0.01" max="50" step="0.01" style="width:100%;padding-right:26px">
-            <span class="suffix" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);pointer-events:none;white-space:nowrap">%</span>
-          </div>
-        </div>
-        <div class="field-spot">
-          <input type="text" id="spot_override" placeholder="Spot price" class="disabled" disabled style="width:140px">
-        </div>
-      </div>
-      <div class="form-row" style="margin-top:10px">
-        <label class="muted">Weight</label>
-        <label class="muted"><input type="radio" name="weight" id="w_oi" value="oi" checked> OI</label>
-        <label class="muted"><input type="radio" name="weight" id="w_vol" value="volume"> Volume</label>
-        <label class="muted"><input type="radio" name="weight" id="w_eq" value="equal"> Equal</label>
-      </div>
-      <div class="action-row" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0">
-        <div style="display:flex;align-items:center;gap:6px">
-          <div class="progress-sm"><div class="bar-sm" id="bar_sm"></div></div>
-          <span class="muted" id="status"></span>
-        </div>
-        <button class="btn primary" type="submit">Run</button>
-        <button class="btn secondary" type="button" onclick="stopRun()">Stop</button>
-      </div>
-    </div>
-    <div class="card view-card" style="flex:0 0 calc((100% - 54px) / 4);min-width:200px;display:flex;flex-direction:column;gap:10px">
-      <div class="card-title" style="margin:0">View Options</div>
-      <div class="form-row" style="margin:0">
-        <label class="muted">Auto refresh</label>
-        <select id="autorefresh" class="select-input" onchange="scheduleRefreshFromSelect()">
-          <option value="0">Off</option>
-          <option value="60">1 min</option>
-          <option value="300" selected>5 min</option>
-          <option value="900">15 min</option>
-        </select>
-      </div>
-    </div>
-    <div class="card ticker-details" style="flex:0 0 calc((100% - 18px) / 2);min-width:300px;display:flex;flex-direction:column;gap:10px">
-      <div class="card-title" style="margin:0">Ticker Details</div>
+    <div id="v_options_panel_settings" class="vanna-options-panel">
       <div class="meta-grid">
         <div class="meta-tile">
-          <div class="meta-label">Expiry</div>
-          <div class="meta-value" id="h_expiry">—</div>
+          <div class="meta-label">Weighting Mode<span class="mini-help" title="Choose how contract-level vanna contributions are weighted before they are aggregated by strike.">?</span></div>
+          <div class="vanna-weight-row">
+            <label class="muted"><input type="radio" name="weight" id="w_oi" value="oi" checked> OI</label>
+            <label class="muted"><input type="radio" name="weight" id="w_vol" value="volume"> Volume</label>
+            <label class="muted"><input type="radio" name="weight" id="w_eq" value="equal"> Equal</label>
+          </div>
+          <div class="meta-subvalue" style="margin-top:10px">Applies to the next Vanna run.</div>
         </div>
         <div class="meta-tile">
-          <div class="meta-label">Spot</div>
-          <div class="meta-value" id="h_spot">—</div>
-          <div class="meta-subvalue" id="h_day">Day move —</div>
+          <div class="meta-label">Spot Override<span class="mini-help" title="Override the live spot price for the next Vanna run. Useful for scenario testing or debugging off-market snapshots.">?</span></div>
+          <label class="spot-toggle" for="spot_override_toggle" style="margin-bottom:8px">
+            <input type="checkbox" id="spot_override_toggle">
+            <span>Enable Override</span>
+          </label>
+          <input type="text" id="spot_override" placeholder="Spot price" class="disabled" disabled maxlength="12">
         </div>
         <div class="meta-tile">
-          <div class="meta-label">After hours</div>
-          <div class="meta-value" id="h_ah">—</div>
-          <div class="meta-subvalue">vs RTH close</div>
+          <div class="meta-label">Page Query Context</div>
+          <div class="vanna-inline-note">Use the top expiry and scope controls plus the window input to change what the charts query. Those stay visible on the page by design.</div>
         </div>
         <div class="meta-tile">
-          <div class="meta-label">Net Vanna</div>
-          <div class="meta-value" id="h_net">—</div>
-          <div class="meta-subvalue" id="h_net_delta">Δ vs last —</div>
-        </div>
-        <div class="meta-tile">
-          <div class="meta-label">Open Interest</div>
-          <div class="meta-value" id="h_oi">—</div>
-        </div>
-        <div class="meta-tile">
-          <div class="meta-label">IV Median</div>
-          <div class="meta-value" id="h_iv">—</div>
-        </div>
-        <div class="meta-tile">
-          <div class="meta-label">Refreshed</div>
-          <div class="meta-value" id="h_refreshed">—</div>
+          <div class="meta-label">Refresh Behavior</div>
+          <div class="vanna-inline-note">Vanna snapshots refresh manually when you press Run. This modal is intentionally for lower-frequency settings and debug information.</div>
         </div>
       </div>
     </div>
-  </div>
-</form>
-    <div id="error_banner" class="alert" style="display:none;margin-top:10px"></div>
-  </div>
 
-    <div class="row" style="margin-top:18px">
-      <div class="card"><h3>Chart A — Vanna by Strike (Calls vs Puts)</h3><div id="chart_net" style="height:660px"></div></div>
-      <div class="card"><h3>Chart B — Accumulated Net Vanna</h3><div id="chart_split" style="height:660px"></div></div>
+    <div id="v_options_panel_details" class="vanna-options-panel" hidden>
+      <div class="vanna-options-copy-row">
+        <div class="muted">Full diagnostics and the current Vanna UI state.</div>
+        <button class="btn secondary" type="button" onclick="vCopyDebugJson()">Copy Debug JSON</button>
+      </div>
+      <div id="v_full_details_body"></div>
     </div>
 
-    <!-- Debug console moved to /debug -->
+    <div class="vanna-options-footer">
+      <button class="btn secondary" type="button" onclick="vCloseOptions()">Close</button>
+    </div>
+  </div>
+</div>
 
-    <script>
+<div id="v_copy_toast" class="vanna-toast" role="status" aria-live="polite">Copied debug data to clipboard</div>
+
+<script>
 const SERVER_SYMBOL = (document.getElementById('h_symbol')?.dataset.symbol) || '';
 let vWindowFromUrl = false;
 let vSpotFromUrl = false;
-      let currentJobId = null;
-      let activeJobId = null;
-      let isRunning = false;
-      let refreshTimer = null;
-      let currentStatus = 'idle';
-      let windowDirty = false;
-      let haveResult = false;
-      let debugOpen = true;
-      function setLogsFromArray(lines) {
-        let combined = [];
-        try { if (Array.isArray(window.__preludeLogs) && window.__preludeLogs.length) combined = window.__preludeLogs.slice(); } catch(e) {}
-        combined = combined.concat(lines||[]);
-        const text = combined.join('\\n');
-        const targets = [document.getElementById('debug_logs'), document.getElementById('logs')].filter(Boolean);
-        for (const el of targets) { el.textContent = text; if(document.getElementById('autoscroll')?.checked) el.scrollTop = 1e9; }
-      }
-      function appendLog(line) {
-        const targets = [document.getElementById('debug_logs'), document.getElementById('logs')].filter(Boolean);
-        for (const el of targets) { el.textContent += (el.textContent?'\\n':'') + line; if(document.getElementById('autoscroll')?.checked) el.scrollTop = 1e9; }
-      }
-      function copyLogs() {
-        const el = document.getElementById('debug_logs') || document.getElementById('logs');
-        if(!el) return;
-        try { if (navigator && navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(el.textContent); } } catch(e) {}
-      }
-      function setSpotOverrideEnabled(on){
-        const box = document.getElementById('spot_override_toggle');
-        const inp = document.getElementById('spot_override');
-        if(box) box.checked = !!on;
-        if(inp){
-          inp.disabled = !on;
-          inp.classList.toggle('disabled', !on);
-          const color = on ? '' : '#8a98ad';
-          inp.style.color = color;
-          inp.style.webkitTextFillColor = color;
-          inp.style.opacity = on ? '' : '0.7';
-        }
-      }
-      function applyExpiryModeState(){
-        const modeEl = document.getElementById('expiry_mode');
-        const expSel = document.getElementById('h_expiry_sel');
-        const isAll = (modeEl && modeEl.value === 'all');
-        if(expSel){
-          expSel.disabled = isAll;
-          expSel.classList.toggle('muted', expSel.disabled);
-        }
-      }
-      async function startRun(ev) {
-        ev.preventDefault();
-        const sym = document.getElementById('symbol').value.trim().toUpperCase();
-        const hsym = document.getElementById('h_symbol'); if(hsym) hsym.textContent = sym || 'Ticker';
-        if(!sym) { document.getElementById('status').textContent='Enter a symbol'; return; }
-        const expSel = document.getElementById('h_expiry_sel');
-        const expiry = expSel && expSel.value ? expSel.value : null;
-        const spotToggle = document.getElementById('spot_override_toggle');
-        const spot = (spotToggle && spotToggle.checked) ? document.getElementById('spot_override').value.trim() : '';
-        // weight
-        const wEl = document.querySelector('input[name="weight"]:checked');
-        const weight = (wEl && wEl.value) || 'oi';
-        try { localStorage.setItem('vanna:weight', weight); } catch(e) {}
-        const pctWindow = (parseFloat(document.getElementById('window_input').value||'10')/100.0) || 0.10;
-        document.getElementById('status').textContent = 'Starting…';
-        setLogsFromArray([]);
-        document.getElementById('bar_sm').style.width = '5%';
-        const pctEl = document.getElementById('bar_pct'); if(pctEl) pctEl.textContent = '5%';
-        isRunning = true;
-        try {
-          const emode = document.getElementById('expiry_mode')?.value || 'current';
-          const isAllScope = emode === 'all';
-          let sendExpiry = expiry;
-          if (isAllScope) { sendExpiry = null; }
-          try { await fetch('/api/debug/client', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message:'vanna:request', status:'info', meta:{symbol:sym, expiry: sendExpiry, next_only: false, pct_window:pctWindow, emode}})}); } catch(e) {}
-          appendLog('POST /api/start …');
-          const res = await fetch('/api/start', {
-            method: 'POST', headers: {'Content-Type':'application/json'},
-            body: JSON.stringify({ symbol: sym, spot_override: spot || null, next_only: false, pct_window: pctWindow, weight: weight, expiry: sendExpiry, expiry_mode: emode })
-          });
-          appendLog('… response ' + res.status);
-          if (!res.ok) throw new Error('Start failed (' + res.status + ')');
-          const payload = await res.json();
-          currentJobId = payload.job_id;
-          activeJobId = currentJobId;
-          try { await fetch('/api/debug/client', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message:'vanna:job_started', status:'info', meta:{symbol:sym, job_id: currentJobId}})}); } catch(e) {}
-          appendLog('Job started: ' + currentJobId);
-          pollStatus(currentJobId);
-          const t0 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
-          const data = await waitForResult(currentJobId);
-          // only render if this job is still the active one
-          if (activeJobId === currentJobId) {
-            try { await fetch('/api/debug/client', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message:'vanna:result', status:'info', meta:{symbol:sym, job_id: currentJobId, strikes:(data?.strikes||[]).length}})}); } catch(e) {}
-            try { await fetch('/api/debug/client', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message:'vanna:render_start', status:'info', meta:{symbol:sym, job_id: currentJobId}})}); } catch(e) {}
-            renderCharts(data);
-            try { await fetch('/api/debug/client', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message:'vanna:render_ok', status:'success', meta:{symbol:sym, job_id: currentJobId}})}); } catch(e) {}
-            // cache for quick reloads
-            try {
-              const params = {
-                expiry: (sendExpiry||''),
-                window: String(document.getElementById('window_input').value||''),
-                spot: (spot||''),
-                weight: (weight||'oi')
-              };
-              const t1 = (typeof performance!=='undefined' && performance.now) ? performance.now() : Date.now();
-              const durMs = Math.max(0, t1 - t0);
-              const perfMsg = `Job runtime: ${(durMs).toFixed ? durMs.toFixed(0) : durMs} ms (cached)`;
-              window.__clientPerfMsg = perfMsg;
-              appendLog(perfMsg);
-              saveVannaCache(sym, params, data, {dur_ms: durMs});
-              if (window.__clientCacheMsg) appendLog(window.__clientCacheMsg);
-            } catch(e) {}
-          }
-          setLastRefreshed();
-          // Update URL with current params for consistency
-          try {
-            const win = document.getElementById('window_input').value || '';
-            const effExpiry = isAllScope ? '' : (expiry||'');
-            const qs = new URLSearchParams({symbol:sym, spot:spot||'', window:win, expiry: effExpiry, weight: (weight||'oi'), emode}).toString();
-            window.history.replaceState(null,'',`/ticker/${SERVER_SYMBOL || sym || ""}?${qs}`);
-          } catch(e) {}
-        } catch (e) { appendLog('ERROR: '+e.message); document.getElementById('status').textContent='Error'; try { await fetch('/api/debug/client', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message:'vanna:render_error', status:'error', meta:{error: String(e&&e.message||e)}})}); } catch(_e) {} }
-        finally { isRunning = false; }
-      }
-      function switchToGex() {
-        const sym = document.getElementById('symbol').value.trim().toUpperCase(); if(!sym) return;
-        const spotToggle = document.getElementById('spot_override_toggle');
-        const spot = (spotToggle && spotToggle.checked) ? document.getElementById('spot_override').value.trim() : '';
-        const exp = document.getElementById('h_expiry_sel')?.value || '';
-        const win = document.getElementById('window_input').value || '';
-        const emode = document.getElementById('expiry_mode')?.value || 'current';
-        const effExp = (emode === 'all') ? '' : exp;
-        const qs = new URLSearchParams({symbol:sym, spot:spot, window:win, expiry:effExp, emode, autorun:'1'}).toString();
-        window.location.href = `/gexticker/${SERVER_SYMBOL || sym || ""}?${qs}`;
-      }
-      function switchToVanna() { /* already on Vanna page */ }
-      async function stopRun() { if (!currentJobId) return; await fetch('/api/stop', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({job_id: currentJobId})}); appendLog('Stop requested…'); }
-      async function pollStatus(jobId) {
-        let keep=true; while(keep) {
-          if (jobId !== activeJobId) break;
-          const r = await fetch(`/api/status?job_id=${jobId}`);
-          if(!r.ok) { appendLog('Status poll failed: ' + r.status); break; }
-          const s = await r.json();
-          currentStatus = s.status || 'unknown';
-          haveResult = !!s.has_result;
-          const pct = Math.round((s.progress||0)*100);
-          document.getElementById('bar_sm').style.width = pct+'%';
-          const pctEl2 = document.getElementById('bar_pct'); if(pctEl2) pctEl2.textContent = pct+'%';
-          document.getElementById('status').textContent = s.status;
-          if(s.logs && s.logs.length) { setLogsFromArray(s.logs); }
-          if(s.status==='error') { showError('Job failed. See debug console for details.'); keep=false; }
-          if(s.status==='done') { clearError(); keep=false; }
-          if(s.status==='cancelled') { showError('Job cancelled by user.'); keep=false; }
-          if(keep) await new Promise(r=>setTimeout(r,600));
-        }
-      }
-      function setLastRefreshed(){ const el=document.getElementById('last_refreshed'); if(el) el.textContent=new Date().toLocaleTimeString(); }
-      function updateHeaderMeta(meta) {
-        try {
-          const expiryEl = document.getElementById('h_expiry');
-          const spotEl = document.getElementById('h_spot');
-          const dayEl = document.getElementById('h_day');
-          const ahEl = document.getElementById('h_ah');
-          const refEl = document.getElementById('h_refreshed');
-          const oiEl = document.getElementById('h_oi');
-          const ivEl = document.getElementById('h_iv');
-          if (expiryEl) expiryEl.textContent = (meta && meta.expiry) || (document.getElementById('h_expiry_sel')?.value) || '—';
-          const sp = (meta && meta.spot!=null) ? Number(meta.spot) : null;
-          if (spotEl) spotEl.textContent = (sp!=null && !Number.isNaN(sp)) ? sp.toFixed(2) : '—';
-          let dayTxt = '—';
-          let ahTxt = '—';
-          if (sp!=null && !Number.isNaN(sp)) {
-            // compute day and AH changes if present
-            const dayRef = (meta && meta.prev_close_yest!=null) ? Number(meta.prev_close_yest) : ((meta && meta.prev_close!=null)? Number(meta.prev_close): null);
-            const rthClose = (meta && meta.rth_close!=null) ? Number(meta.rth_close) : null;
-            const ah = (meta && meta.spot_ah!=null) ? Number(meta.spot_ah) : null;
-            if (dayRef!==null && !Number.isNaN(dayRef)) { const dpct = ((sp-dayRef)/dayRef*100.0); dayTxt = (dpct>=0?'+':'') + dpct.toFixed(2) + '%'; }
-            if (ah!==null && rthClose!==null && !Number.isNaN(ah) && !Number.isNaN(rthClose)) {
-              const apct = ((ah-rthClose)/rthClose*100.0); const adel = (ah-rthClose); ahTxt = (apct>=0?'+':'') + apct.toFixed(2) + '% (' + (adel>=0?'+':'') + adel.toFixed(2) + ')';
-            }
-            // back-populate input for quick tweak
-            const inp = document.getElementById('spot_override'); if (inp) inp.value = sp.toFixed(2);
-            const spotToggle = document.getElementById('spot_override_toggle');
-            if (spotToggle) setSpotOverrideEnabled(spotToggle.checked);
-          }
-          if (dayEl) dayEl.textContent = 'Day move ' + dayTxt;
-          if (ahEl) ahEl.textContent = ahTxt;
-          if (refEl) refEl.textContent = (meta && meta.as_of) || '—';
-          const st = (meta && meta.stats) || {};
-          if (oiEl) oiEl.textContent = (st.oi_sum!=null) ? fmtAbbrev(Number(st.oi_sum)||0) : '—';
-          if (ivEl) ivEl.textContent = (st.iv_median!=null) ? Number(st.iv_median).toFixed(2) : '—';
-        } catch(e) {}
-      }
-      async function loadExpiries(sym) {
-        try {
-          const r = await fetch(`/api/expiries?symbol=${encodeURIComponent(sym)}`); if(!r.ok) return;
-          const j = await r.json(); const el = document.getElementById('h_expiry_sel'); if(!el) return; el.innerHTML='';
-          const exps = (j.expiries||[]);
-          if (!exps.length) { const o=document.createElement('option'); o.value=''; o.textContent='No expiries'; o.disabled=true; el.appendChild(o); }
-          else { exps.forEach(e=>{ const o=document.createElement('option'); o.value=e; o.textContent=e; el.appendChild(o); }); }
-          // restore selection if present
-          try { const k='vanna:expiry:'+sym; const sv=localStorage.getItem(k); if(sv && (j.expiries||[]).includes(sv)) el.value=sv; } catch(e) {}
-          if(!el.value && exps.length) el.value = exps[0];
-          el.onchange = ()=>{ try { localStorage.setItem('vanna:expiry:'+sym, el.value); } catch(e) {}; startRun(new Event('submit')); }
-          applyExpiryModeState();
-          // autorun once after expiries are loaded
-          if (!window.__vAutoRan) { window.__vAutoRan = true; startRun(new Event('submit')); }
-        } catch(e) {}
-      }
-      function applyDebugState() {
-        const wrap = document.getElementById('debug_wrap');
-        const title = document.getElementById('dbg_title');
-        const btn = document.getElementById('dbg_toggle');
-        if (wrap) wrap.style.display = debugOpen ? 'block' : 'none';
-        if (title) title.textContent = (debugOpen ? '▾ ' : '▸ ') + 'Debug Console';
-        if (btn) btn.textContent = debugOpen ? 'Hide' : 'Show';
-      }
-      function toggleDebug() {
-        debugOpen = !debugOpen;
-        try { localStorage.setItem('debug:open', debugOpen ? '1' : '0'); } catch(e) {}
-        applyDebugState();
-      }
+let vWeightFromUrl = false;
+let currentJobId = null;
+let activeJobId = null;
+let isRunning = false;
+let currentStatus = 'idle';
+let windowDirty = false;
+let haveResult = false;
+let debugOpen = true;
+let vLastData = null;
+let vLastRequestPayload = null;
+let vLastRunError = null;
+let vOptionsTab = 'settings';
+let vToastTimer = null;
+let vChartRenderToken = 0;
 
-      function writeClipboard(txt) {
-        try { if (navigator && navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(txt); } catch(e) {}
-        // Fallback for older browsers
-        return new Promise((resolve)=>{
-          const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select();
-          try { document.execCommand('copy'); } catch(e) {}
-          document.body.removeChild(ta); resolve();
-        });
-      }
-      function positionMenu(el, btnId) { try { const btn=document.getElementById(btnId); if(!btn||!el) return; const r=btn.getBoundingClientRect(); el.style.position='fixed'; el.style.top = (Math.round((r.bottom||60)+10))+'px'; el.style.right = Math.max(12, Math.round(window.innerWidth - r.right) + 12) + 'px'; el.style.zIndex='10000'; } catch(e) {} }
-      function toggleMenu(force) { const el=document.getElementById('menu_panel'); if(!el) return; if(typeof force==='boolean'){ if(force){ positionMenu(el,'menu_btn'); el.style.display='block'; } else { el.style.display='none'; } return; } const show=(el.style.display==='none'||!el.style.display); if(show){ positionMenu(el,'menu_btn'); el.style.display='block'; } else { el.style.display='none'; } }
-      window.addEventListener('resize', ()=>{ const el=document.getElementById('menu_panel'); if(el && el.style.display==='block') positionMenu(el,'menu_btn'); });
-      function setupOutsideClose(panelId, btnId, closerName) {
-        document.addEventListener('click', (e)=>{
-          try {
-            const p = document.getElementById(panelId);
-            const b = document.getElementById(btnId);
-            if(!p) return;
-            if(p.style.display !== 'block') return;
-            const t = e.target;
-            if (p.contains(t) || (b && b.contains(t))) return;
-            if (typeof window[closerName] === 'function') window[closerName](false);
-          } catch(ex) {}
-        });
-      }
-      setupOutsideClose('menu_panel','menu_btn','toggleMenu');
+function vSyncRunStopState(running) {
+  const runBtn = document.getElementById('run_btn');
+  const stopBtn = document.getElementById('stop_btn');
+  if (runBtn) {
+    runBtn.classList.toggle('run-inactive', !!running);
+    runBtn.disabled = !!running;
+    runBtn.setAttribute('aria-pressed', running ? 'false' : 'true');
+    runBtn.title = running ? 'Run is unavailable while the current job is active.' : 'Start a Vanna run';
+  }
+  if (stopBtn) {
+    stopBtn.classList.toggle('stop-active', !!running);
+    stopBtn.disabled = !running;
+    stopBtn.setAttribute('aria-pressed', running ? 'true' : 'false');
+    stopBtn.title = running ? 'Stop the active Vanna run' : 'Stop is unavailable while no run is active.';
+  }
+}
 
-      // Simple events dropdown (next 7 days) as a large popover
-      const EVENTS = [
-        {date:'2025-10-01', title:'FOMC Rate Decision', time:'14:00 ET'},
-        {date:'2025-10-02', title:'Initial Jobless Claims', time:'08:30 ET'},
-      ];
-      function hasUpcomingEvents() {
-        try {
-          const now = new Date(); const week = new Date(now.getTime() + 7*86400000);
-          const rows = (EVENTS||[]).filter(e=>{ const d=new Date(e.date+'T00:00:00Z'); return d>=new Date(now.toDateString()) && d<=week; });
-          return rows.length>0;
-        } catch(e) { return false; }
-      }
-      function getEventButton() { return document.getElementById('ev_btn') || document.getElementById('g_ev_btn'); }
-      function _lsGet(k, defv=null) { try { const v=localStorage.getItem(k); return v? JSON.parse(v): defv; } catch(e){ return defv; } }
-      function _lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} }
-      async function eventsFetch(sym) {
-        const key = 'events:last:' + (sym||'ALL');
-        const cache = _lsGet(key, null);
-        const now = Date.now();
-        if (cache && (now - (cache.ts||0) < 60*1000)) return cache.data;
-        try {
-          const r = await fetch(`/api/events?symbol=${encodeURIComponent(sym||'')}`);
-          if (!r.ok) throw new Error('events fetch failed');
-          const data = await r.json();
-          _lsSet(key, {ts: now, data});
-          return data;
-        } catch(e) {
-          return cache? cache.data: {polygon:[], econ:[]};
-        }
-      }
-      function unseenCount(sym, data) {
-        const seenP = new Set(_lsGet('events:seen:polygon', []));
-        const seenE = new Set(_lsGet('events:seen:econ', []));
-        let u=0; (data.polygon||[]).forEach(a=>{ if(!seenP.has(String(a.id||a.url||a.title))) u++; });
-        (data.econ||[]).forEach(a=>{ if(!seenE.has(String(a.id||a.url||a.title))) u++; });
-        return u;
-      }
-      async function updateEventButtonHighlight() {
-        const btn = getEventButton(); if(!btn) return;
-        const sym = (document.getElementById('symbol')?.value || document.getElementById('g_symbol')?.value || '').trim().toUpperCase();
-        const data = await eventsFetch(sym);
-        const unseen = unseenCount(sym, data);
-        btn.className = 'btn ' + (unseen>0 ? 'primary' : 'secondary');
-      }
-      function econUrlForDate(d) { return `https://finance.yahoo.com/calendar/economic?from=${d}&to=${d}`; }
-      function ensureEventPanel() {
-        let el = document.getElementById('events_panel');
-        if (!el) {
-          el = document.createElement('div'); el.id = 'events_panel';
-          el.className = 'card';
-          el.style.cssText='position:fixed; z-index:100; width:min(900px, 54vw); max-width:95vw; max-height:72vh; overflow:auto; box-shadow:0 8px 24px rgba(0,0,0,.6)';
-          document.body.appendChild(el);
-        }
-        return el;
-      }
-      function positionEventPanel(el) {
-        const btn = getEventButton(); if(!btn) return;
-        const r = btn.getBoundingClientRect();
-        const top = Math.round((r.bottom || 60) + 10);
-        const right = Math.max(12, Math.round(window.innerWidth - r.right) + 12);
-        el.style.top = top + 'px';
-        el.style.right = right + 'px';
-        el.style.left = '';
-      }
-      async function toggleEvents() { const el = ensureEventPanel(); const show = (el.style.display==='none' || !el.style.display); if (show) { await renderEvents(el); positionEventPanel(el); el.style.display='block'; } else { el.style.display='none'; } }
-      async function renderEvents(el) {
-        try {
-          const sym = (document.getElementById('symbol')?.value || document.getElementById('g_symbol')?.value || '').trim().toUpperCase();
-          const data = await eventsFetch(sym);
-          let html = `<div style='display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#111827;padding-bottom:6px'><h3 style='margin:0'>Events & News</h3><button class='btn secondary' onclick="toggleEvents()">Close</button></div>`;
-          function renderSection(title, arr) {
-            const items = (arr||[]).map(a=>{ const t=a.title||''; const url=a.url||'#'; const ts=a.published||''; return `<div style='margin:10px 0'><a href='${url}' target='_blank' rel='noopener' style='color:#93c5fd;text-decoration:none;font-weight:600'>${t}</a> <span class='muted'>— ${ts}</span></div>`; }).join('');
-            return `<div class='card' style='margin-top:10px'><h4 style='margin:0 0 6px 0'>${title}</h4>${items || `<span class='muted'>None</span>`}</div>`;
-          }
-          html += renderSection('Ticker News (Massive)', data.polygon);
-          html += renderSection('Economic News', data.econ);
-          // Upcoming economic events FYI (static list)
-          try {
-            const rows = (EVENTS||[]).map(e=> `<div style='margin:6px 0'><strong>${e.title}</strong> <span class='muted'>— ${e.date} ${e.time||''}</span></div>`).join('');
-            html += `<div class='card' style='margin-top:10px'><h4 style='margin:0 0 6px 0'>Upcoming Economic Events (FYI)</h4>${rows||`<span class='muted'>None</span>`}</div>`;
-          } catch(e) {}
-          el.innerHTML = html;
-          // mark as seen
-          const seenP = new Set(_lsGet('events:seen:polygon', []));
-          const seenE = new Set(_lsGet('events:seen:econ', []));
-          const idsP = (data.polygon||[]).map(a=> String(a.id||a.url||a.title));
-          const idsE = (data.econ||[]).map(a=> String(a.id||a.url||a.title));
-          idsP.forEach(id=> seenP.add(id)); idsE.forEach(id=> seenE.add(id));
-          _lsSet('events:seen:polygon', Array.from(seenP));
-          _lsSet('events:seen:econ', Array.from(seenE));
-          try { fetch('/api/events/ack', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({seen:{polygon: idsP, econ: idsE}})}); } catch(e) {}
-          // update button highlight
-          updateEventButtonHighlight();
-        } catch(e) { el.innerHTML = '<div class=muted>Error loading events</div>'; }
-      }
-      window.addEventListener('resize', ()=>{ const el=document.getElementById('events_panel'); if(el && el.style.display==='block') positionEventPanel(el); });
+function setLogsFromArray(lines) {
+  let combined = [];
+  try { if (Array.isArray(window.__preludeLogs) && window.__preludeLogs.length) combined = window.__preludeLogs.slice(); } catch(e) {}
+  combined = combined.concat(lines || []);
+  const text = combined.join('\n');
+  const targets = [document.getElementById('debug_logs'), document.getElementById('logs')].filter(Boolean);
+  for (const el of targets) {
+    el.textContent = text;
+    if (document.getElementById('autoscroll')?.checked) el.scrollTop = 1e9;
+  }
+}
 
-      // Formatting helper for compact units
-      function fmtAbbrev(n) { const s=Math.sign(n||0),v=Math.abs(n||0); if(v>=1e12) return (s*v/1e12).toFixed(2)+'T'; if(v>=1e9) return (s*v/1e9).toFixed(2)+'B'; if(v>=1e6) return (s*v/1e6).toFixed(2)+'M'; if(v>=1e3) return (s*v/1e3).toFixed(2)+'K'; return (s*v).toFixed(0); }
-      function updateVannaSeries(sym, net) {
-        try { const k='vanna:series:'+sym; const now=Date.now(); let arr=JSON.parse(localStorage.getItem(k)||'[]'); if(!Array.isArray(arr)) arr=[]; arr.push({ts:now, net: Number(net)||0}); if(arr.length>20) arr=arr.slice(-20); localStorage.setItem(k, JSON.stringify(arr)); } catch(e) {}
-      }
+function appendLog(line) {
+  const targets = [document.getElementById('debug_logs'), document.getElementById('logs')].filter(Boolean);
+  for (const el of targets) {
+    el.textContent += (el.textContent ? '\n' : '') + line;
+    if (document.getElementById('autoscroll')?.checked) el.scrollTop = 1e9;
+  }
+}
 
-      async function copyPairs() {
-        if(!currentJobId) { appendLog('No job to export'); return; }
-        try {
-          const r = await fetch(`/api/export/pairs?job_id=${currentJobId}`);
-          if(!r.ok) throw new Error('Export failed');
-          const j = await r.json();
-          await writeClipboard(j.pairs||'');
-          appendLog('Copied TV pairs to clipboard');
-        } catch(e) { appendLog('ERROR export pairs: '+e.message); }
-      }
+function copyLogs() {
+  const el = document.getElementById('debug_logs') || document.getElementById('logs');
+  if (!el) return;
+  try {
+    if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(el.textContent);
+    }
+  } catch(e) {}
+}
 
-      async function copyPine() {
-        if(!currentJobId) { appendLog('No job to export'); return; }
-        try {
-          const r = await fetch(`/api/export/pine?job_id=${currentJobId}`);
-          if(!r.ok) throw new Error('Export failed');
-          const j = await r.json();
-          await writeClipboard(j.pine||'');
-          appendLog('Copied Pine script to clipboard');
-        } catch(e) { appendLog('ERROR export pine: '+e.message); }
-      }
-      function showError(msg) { const el=document.getElementById('error_banner'); if(!el) return; el.textContent=msg||'Error'; el.style.display='block'; }
-      function clearError() { const el=document.getElementById('error_banner'); if(!el) return; el.textContent=''; el.style.display='none'; }
-      function scheduleRefreshFromSelect(){
-        if (refreshTimer) { clearInterval(refreshTimer); refreshTimer=null; }
-        const sel = document.getElementById('autorefresh');
-        const val = parseInt(sel.value,10) || 0;
-        try { localStorage.setItem('vanna:auto', String(val)); } catch(e) {}
-        if (val>0) {
-          refreshTimer = setInterval(()=>{ const s=document.getElementById('symbol').value.trim(); if(s && !isRunning) startRun(new Event('submit')); }, val*1000);
-        }
-      }
-      async function waitForResult(jobId) {
-        const startTs = Date.now();
-        while(true) {
-          if (jobId !== activeJobId) throw new Error('Superseded by a new run');
-          const st = await fetch(`/api/status?job_id=${jobId}`);
-          if(!st.ok) throw new Error('Status fetch failed');
-          const s = await st.json();
-          const status = s.status || 'unknown';
-          if (status==='error') throw new Error('Job error');
-          if (status==='cancelled') throw new Error('Job cancelled');
-          const r = await fetch(`/api/result?job_id=${jobId}`);
-          if (r.status!==204) { if(!r.ok) throw new Error('Failed fetching result'); return await r.json(); }
-          if (Date.now()-startTs > 180000) throw new Error('Timeout waiting for result');
-          await new Promise(r=>setTimeout(r,500));
-        }
-      }
-      function applySymbolPresets() {
-        const sym = document.getElementById('symbol').value.trim().toUpperCase();
-        if(sym.startsWith('SPX') && !windowDirty) {
-          const el = document.getElementById('window_input');
-          const v = parseFloat(el.value||'10');
-          if(!v || v>4) el.value = '3';
-        }
-      }
-      function renderCharts(d) {
-        const x=d.strikes||[], vnet=(d.vanna_net||[]).map(Number), vc=(d.vanna_calls||[]).map(Number), vp=(d.vanna_puts||[]).map(Number);
-        updateHeaderMeta(d.meta||{});
-        // metrics + timeseries
-        try {
-          const sym = (d.meta && d.meta.symbol) || document.getElementById('symbol')?.value?.trim()?.toUpperCase() || '';
-          const net = vnet.reduce((a,b)=>a+(b||0),0);
-          const k = 'vanna:series:'+sym; let prev=null; try { const arr = JSON.parse(localStorage.getItem(k)||'[]'); if(Array.isArray(arr) && arr.length) prev = arr[arr.length-1].net; } catch(e) {}
-          const delta = (prev!==null && prev!==undefined) ? (net - prev) : null;
-          const st = (d.meta && d.meta.stats) || {};
-          const oi = (st.oi_sum!=null)? fmtAbbrev(Number(st.oi_sum)||0): null;
-          const iv = (st.iv_median!=null)? Number(st.iv_median).toFixed(2): null;
-          const netEl = document.getElementById('h_net'); if (netEl) netEl.textContent = fmtAbbrev(net);
-          const deltaEl = document.getElementById('h_net_delta');
-          if (deltaEl) deltaEl.textContent = (delta===null) ? 'Δ vs last —' : ('Δ vs last ' + (delta>=0?'+':'') + fmtAbbrev(Math.abs(delta)));
-          const oiEl = document.getElementById('h_oi'); if (oiEl && oi!==null) oiEl.textContent = oi;
-          const ivEl = document.getElementById('h_iv'); if (ivEl && iv!==null) ivEl.textContent = iv;
-          updateVannaSeries(sym, net);
-        } catch(e) {}
-        const gridcolor='#1f2937';
-        // Autoscale small magnitudes for readability
-        const absmax = Math.max(1e-12, ...vnet.map(v=>Math.abs(v)), ...vc.map(v=>Math.abs(v)), ...vp.map(v=>Math.abs(v)));
-        let factor = 1, suffix='';
-        const scales = [1, 1e3, 1e6, 1e9];
-        for (const f of scales) { if (absmax*f >= 1 && absmax*f < 1000) { factor = f; break; } }
-        if (factor===1e3) suffix = ' (×1e3)'; else if (factor===1e6) suffix=' (×1e6)'; else if (factor===1e9) suffix=' (×1e9)';
-        const ynet = vnet.map(v=>v*factor), yvc = vc.map(v=>v*factor), yvp = vp.map(v=>v*factor);
-        // Chart A: stacked calls vs puts with net overlay + hoverable vertical lines
-        const spot = (d.meta && Number(d.meta.spot)) || null;
-        const spotAH = (d.meta && Number(d.meta.spot_ah)) || null;
-        const dayRef = (d.meta && d.meta.prev_close_yest!=null) ? Number(d.meta.prev_close_yest) : ((d.meta && d.meta.prev_close!=null) ? Number(d.meta.prev_close) : null);
-        const rthClose = (d.meta && d.meta.rth_close!=null) ? Number(d.meta.rth_close) : null;
-        const yMinA = Math.min(0, ...yvc, ...yvp, ...ynet);
-        const yMaxA = Math.max(0, ...yvc, ...yvp, ...ynet);
-        const extraA = [];
-        if (spot) {
-          const pct = (dayRef? ((spot-dayRef)/dayRef*100.0) : null);
-          const txt = 'Spot: ' + spot.toFixed(2) + (pct==null?'':(' (' + (pct>=0?'+':'') + pct.toFixed(2) + '%)'));
-          extraA.push({x:[spot,spot], y:[yMinA,yMaxA], type:'scatter', mode:'lines', name:'Spot', hoverinfo:'text', text:[txt,txt], line:{color:'#ffffff', width:1, dash:'dot'}, showlegend:false});
-        }
-        if (spotAH) {
-          const pct = (rthClose? ((spotAH-rthClose)/rthClose*100.0) : null);
-          const delta = (rthClose? (spotAH-rthClose) : null);
-          let txt = 'After-hours: ' + spotAH.toFixed(2);
-          if (pct!=null) txt += ' (' + (pct>=0?'+':'') + pct.toFixed(2) + '%';
-          if (delta!=null) txt += ', ' + (delta>=0?'+':'') + delta.toFixed(2) + ')';
-          extraA.push({x:[spotAH,spotAH], y:[yMinA,yMaxA], type:'scatter', mode:'lines', name:'After-hours', hoverinfo:'text', text:[txt,txt], line:{color:'#d2b48c', width:1, dash:'dot'}, opacity:0.8, showlegend:false});
-        }
-        // Chart A bars only (no connecting Net line)
-        Plotly.newPlot('chart_net', [{x, y:yvc, type:'bar', name:'Calls'}, {x, y:yvp, type:'bar', name:'Puts'}].concat(extraA), {
-          barmode:'relative', paper_bgcolor:'#111827', plot_bgcolor:'#111827',
-          xaxis:{title:'Strike', gridcolor}, yaxis:{title:'Vanna'+suffix, gridcolor, autorange:true}, margin:{t:20}
-        }, {displayModeBar:false});
-        // Chart B: accumulated net vanna (cumulative sum)
-        let csum = [];
-        let acc = 0; for (let i=0;i<ynet.length;i++) { acc += (ynet[i]||0); csum.push(acc); }
-        const yMinB = Math.min(0, ...csum);
-        const yMaxB = Math.max(0, ...csum);
-        const extraB = [];
-        if (spot) {
-          const pct = (dayRef? ((spot-dayRef)/dayRef*100.0) : null);
-          const txt = 'Spot: ' + spot.toFixed(2) + (pct==null?'':(' (' + (pct>=0?'+':'') + pct.toFixed(2) + '%)'));
-          extraB.push({x:[spot,spot], y:[yMinB,yMaxB], type:'scatter', mode:'lines', name:'Spot', hoverinfo:'text', text:[txt,txt], line:{color:'#ffffff', width:1, dash:'dot'}, showlegend:false});
-        }
-        if (spotAH) {
-          const pct = (rthClose? ((spotAH-rthClose)/rthClose*100.0) : null);
-          const delta = (rthClose? (spotAH-rthClose) : null);
-          let txt = 'After-hours: ' + spotAH.toFixed(2);
-          if (pct!=null) txt += ' (' + (pct>=0?'+':'') + pct.toFixed(2) + '%';
-          if (delta!=null) txt += ', ' + (delta>=0?'+':'') + delta.toFixed(2) + ')';
-          extraB.push({x:[spotAH,spotAH], y:[yMinB,yMaxB], type:'scatter', mode:'lines', name:'After-hours', hoverinfo:'text', text:[txt,txt], line:{color:'#d2b48c', width:1, dash:'dot'}, opacity:0.8, showlegend:false});
-        }
-        Plotly.newPlot('chart_split', [{x, y:csum, type:'scatter', mode:'lines+markers', name:'Accumulated'}].concat(extraB), {
-          paper_bgcolor:'#111827', plot_bgcolor:'#111827',
-          xaxis:{title:'Strike', gridcolor}, yaxis:{title:'Accumulated Net Vanna'+suffix, gridcolor, autorange:true}, margin:{t:20}
-        }, {displayModeBar:false});
-      }
-      // cache helpers for Vanna
-      function saveVannaCache(sym, params, data, metrics) {
-        try { localStorage.setItem('vanna:cache:'+sym, JSON.stringify({ts:Date.now(), params, data, metrics: (metrics||{})})); } catch(e) {}
-      }
-      function loadVannaCache(sym) { try { return JSON.parse(localStorage.getItem('vanna:cache:'+sym)||'null'); } catch(e) { return null; } }
-      function getVannaAutoSecs() { const el=document.getElementById('autorefresh'); const v=parseInt(el?.value||'0',10); return isNaN(v)?0:v; }
-      function maybePreloadVannaFromCache() {
-        const sym = document.getElementById('symbol').value.trim().toUpperCase(); if(!sym) return;
-        const ttlSec = getVannaAutoSecs(); if(ttlSec<=0) return;
-        const c = loadVannaCache(sym);
-        if(!c) { window.__clientCacheMsg = `Cache miss: ${SERVER_SYMBOL || sym || ""} (no cached result)`; window.__preludeLogs = [window.__clientCacheMsg]; appendLog(window.__clientCacheMsg); return; }
-        const ageMs = Date.now() - (c.ts||0);
-        if (ageMs <= ttlSec*1000) {
-          const prev = (c.metrics && typeof c.metrics.dur_ms !== 'undefined') ? String((c.metrics.dur_ms||0).toFixed ? c.metrics.dur_ms.toFixed(0) : c.metrics.dur_ms) : 'n/a';
-          window.__clientCacheMsg = `Cache hit: ${SERVER_SYMBOL || sym || ""} age=${(ageMs/1000).toFixed(1)}s; prev runtime=${prev} ms`;
-          window.__preludeLogs = [window.__clientCacheMsg];
-          appendLog(window.__clientCacheMsg);
-          try { renderCharts(c.data||{}); } catch(e) {}
-        } else {
-          window.__clientCacheMsg = `Cache stale: ${SERVER_SYMBOL || sym || ""} age=${(ageMs/1000).toFixed(1)}s > TTL=${ttlSec}s`;
-          window.__preludeLogs = [window.__clientCacheMsg];
-          appendLog(window.__clientCacheMsg);
-        }
-      }
-      // appendLog implemented above to update the debug console
-      document.addEventListener('DOMContentLoaded', ()=>{
-        const s = document.getElementById('symbol').value.trim();
-        // ensure symbol from path if missing
-        try { if(!s) { const m = (location.pathname||'').match(/\/ticker\/(.+)$/); if(m && m[1]) document.getElementById('symbol').value = decodeURIComponent(m[1]); } } catch(e) {}
-        // Apply URL query overrides for consistency when switching views
-        try {
-          const url = new URL(window.location.href);
-          const qspot = url.searchParams.get('spot');
-          if(qspot!==null && String(qspot).trim() !== ''){
-            const spotEl = document.getElementById('spot_override'); if(spotEl) spotEl.value = qspot;
-            vSpotFromUrl = true;
-            const box = document.getElementById('spot_override_toggle'); if(box) box.checked = true;
-          }
-          const qwin = url.searchParams.get('window'); if(qwin!==null) { document.getElementById('window_input').value = qwin; vWindowFromUrl = true; }
-          const qemode = url.searchParams.get('emode'); if(qemode) { const el=document.getElementById('expiry_mode'); if(el) el.value=qemode; }
-          const qweight = url.searchParams.get('weight'); if(qweight) { const wEl=document.querySelector(`input[name=weight][value='${qweight}']`); if(wEl) wEl.checked=true; }
-        } catch(e) {}
-        const symNow = (document.getElementById('symbol').value||'').trim();
-        if(symNow) loadExpiries(symNow);
-        try { const saved = localStorage.getItem('vanna:auto'); if(saved !== null) document.getElementById('autorefresh').value = saved; } catch(e) {}
-        // per-ticker window persistence
-        try { const sym = (document.getElementById('symbol').value||'').trim().toUpperCase(); const winSaved = localStorage.getItem('vanna:window:'+sym) || localStorage.getItem('vanna:window'); if(winSaved !== null && !vWindowFromUrl) document.getElementById('window_input').value = winSaved; } catch(e) {}
-        document.getElementById('window_input').addEventListener('input', ()=>{ windowDirty=true; try { localStorage.setItem('vanna:window', document.getElementById('window_input').value); } catch(e) {} });
-        document.getElementById('window_input').addEventListener('change', ()=>{ try { const sym=(document.getElementById('symbol').value||'').trim().toUpperCase(); localStorage.setItem('vanna:window:'+sym, document.getElementById('window_input').value); } catch(e) {} });
-        try { const box=document.getElementById('spot_override_toggle'); if(box){ box.addEventListener('change', ()=>setSpotOverrideEnabled(box.checked)); setSpotOverrideEnabled(box.checked || vSpotFromUrl); } } catch(e) {}
-        document.getElementById('symbol').addEventListener('input', applySymbolPresets);
-        // persist weight
-        try { const wf = localStorage.getItem('vanna:weight'); if(wf) { const wEl = document.querySelector(`input[name=weight][value='${wf}']`); if(wEl) wEl.checked = true; } } catch(e) {}
-        for (const el of document.querySelectorAll('input[name=weight]')) { el.addEventListener('change', ()=>{ try { localStorage.setItem('vanna:weight', el.value); } catch(e) {} }); }
-        // persist expiry mode (default to current if unset)
-        try {
-          const el = document.getElementById('expiry_mode');
-          const saved = localStorage.getItem('vanna:emode');
-          if (el) {
-            if (saved) el.value = saved; else { el.value = el.value || 'current'; localStorage.setItem('vanna:emode', el.value); }
-            el.addEventListener('change', ()=>{ try { localStorage.setItem('vanna:emode', el.value); } catch(e) {} applyExpiryModeState(); });
-          }
-        } catch(e) {}
-        // Bind once (defensive) in case inline onsubmit isn't firing
-        try { document.getElementById('runForm').addEventListener('submit', startRun); } catch(e) {}
-        // apply persisted debug open state
-        try { const d = localStorage.getItem('debug:open'); if(d!==null) debugOpen = (d==='1'); } catch(e) {}
-        applyDebugState();
-        updateEventButtonHighlight();
-        appendLog('UI ready');
-        applySymbolPresets();
-        applyExpiryModeState();
-        scheduleRefreshFromSelect();
-        // Preload from cache if fresh
-        maybePreloadVannaFromCache();
-        // autorun happens in loadExpiries once options are populated
+function setSpotOverrideEnabled(on) {
+  const box = document.getElementById('spot_override_toggle');
+  const inp = document.getElementById('spot_override');
+  if (box) box.checked = !!on;
+  if (inp) {
+    inp.disabled = !on;
+    inp.classList.toggle('disabled', !on);
+    const color = on ? '' : '#8a98ad';
+    inp.style.color = color;
+    inp.style.webkitTextFillColor = color;
+    inp.style.opacity = on ? '' : '0.7';
+  }
+  if (document.getElementById('v_options_modal')?.style.display === 'flex' && vOptionsTab === 'details') vRenderFullDetails();
+}
+
+function vParseNum(value) {
+  const num = Number(value);
+  return (value !== null && value !== undefined && !Number.isNaN(num)) ? num : null;
+}
+
+function fmtAbbrev(n) {
+  const s = Math.sign(n || 0);
+  const v = Math.abs(n || 0);
+  if (v >= 1e12) return (s * v / 1e12).toFixed(2) + 'T';
+  if (v >= 1e9) return (s * v / 1e9).toFixed(2) + 'B';
+  if (v >= 1e6) return (s * v / 1e6).toFixed(2) + 'M';
+  if (v >= 1e3) return (s * v / 1e3).toFixed(2) + 'K';
+  return (s * v).toFixed(0);
+}
+
+function vWeightLabel(mode) {
+  if (mode === 'volume') return 'Volume';
+  if (mode === 'equal') return 'Equal';
+  return 'OI';
+}
+
+function vCurrentWeightMode() {
+  const el = document.querySelector('input[name="weight"]:checked');
+  return (el && el.value) || 'oi';
+}
+
+function vSyncWeightDisplay() {
+  const label = vWeightLabel(vCurrentWeightMode());
+  const ctx = document.getElementById('v_ctx_weight');
+  const detail = document.getElementById('v_details_weight');
+  if (ctx) ctx.textContent = label;
+  if (detail) detail.textContent = label;
+  if (document.getElementById('v_options_modal')?.style.display === 'flex' && vOptionsTab === 'details') vRenderFullDetails();
+}
+
+function vSetContextValue(id, text, tone) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text;
+  el.classList.remove('positive', 'negative');
+  if (tone) el.classList.add(tone);
+}
+
+function vUpdateContextBar(meta) {
+  const spot = vParseNum(meta && meta.spot);
+  const dayRef = vParseNum(meta && (meta.prev_close_yest != null ? meta.prev_close_yest : meta.prev_close));
+  const ah = vParseNum(meta && meta.spot_ah);
+  const rthClose = vParseNum(meta && meta.rth_close);
+  let dayText = '—';
+  let dayTone = '';
+  let ahText = '—';
+  let ahTone = '';
+  if (spot !== null && dayRef !== null && dayRef !== 0) {
+    const dayPct = ((spot - dayRef) / dayRef) * 100.0;
+    dayText = (dayPct >= 0 ? '+' : '') + dayPct.toFixed(2) + '%';
+    dayTone = dayPct > 0 ? 'positive' : (dayPct < 0 ? 'negative' : '');
+  }
+  if (ah !== null && rthClose !== null && rthClose !== 0) {
+    const ahPct = ((ah - rthClose) / rthClose) * 100.0;
+    const ahDelta = ah - rthClose;
+    ahText = (ahPct >= 0 ? '+' : '') + ahPct.toFixed(2) + '% (' + (ahDelta >= 0 ? '+' : '') + ahDelta.toFixed(2) + ')';
+    ahTone = ahPct > 0 ? 'positive' : (ahPct < 0 ? 'negative' : '');
+  }
+  vSetContextValue('v_ctx_weight', vWeightLabel(vCurrentWeightMode()));
+  vSetContextValue('v_ctx_spot', spot === null ? '—' : spot.toFixed(2));
+  vSetContextValue('v_ctx_day', dayText, dayTone);
+  vSetContextValue('v_ctx_ah', ahText, ahTone);
+  vSetContextValue('v_ctx_updated', (meta && meta.as_of) || '—');
+}
+
+function applyExpiryModeState() {
+  const modeEl = document.getElementById('expiry_mode');
+  const expSel = document.getElementById('h_expiry_sel');
+  const isAll = (modeEl && modeEl.value === 'all');
+  if (expSel) {
+    expSel.disabled = isAll;
+    expSel.classList.toggle('muted', expSel.disabled);
+  }
+  vUpdateContextBar((vLastData && vLastData.meta) || {});
+}
+
+function vShowToast(message) {
+  const toast = document.getElementById('v_copy_toast');
+  if (!toast) return;
+  toast.textContent = message;
+  toast.classList.add('show');
+  if (vToastTimer) clearTimeout(vToastTimer);
+  vToastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+}
+
+function vEscapeHtml(value) {
+  return String(value == null ? '' : value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function vFormatDetailValue(value, mode) {
+  if (value === null || value === undefined || value === '') return '—';
+  if (mode === 'bool') return value ? 'Yes' : 'No';
+  if (mode === 'num') {
+    const num = vParseNum(value);
+    return num === null ? '—' : num.toFixed(2);
+  }
+  if (mode === 'abbrev') return fmtAbbrev(value);
+  if (mode === 'json') return vEscapeHtml(JSON.stringify(value, null, 2));
+  return vEscapeHtml(value);
+}
+
+function vRenderTags(items) {
+  const list = Array.isArray(items) ? items.filter((item) => item !== null && item !== undefined && String(item).trim() !== '') : [];
+  if (!list.length) return '<div class="meta-subvalue">—</div>';
+  return `<div class="details-tags">${list.map((item) => `<span class="details-tag">${vEscapeHtml(item)}</span>`).join('')}</div>`;
+}
+
+function vRenderDetailsList(items) {
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!list.length) return '<div class="meta-subvalue">No details available.</div>';
+  return `<div class="details-list">${list.map((item) => `
+    <div class="details-item">
+      <div>
+        <div class="meta-label">${vEscapeHtml(item.label || 'Field')}</div>
+        ${item.help ? `<div class="meta-subvalue" style="max-width:320px">${vEscapeHtml(item.help)}</div>` : ''}
+      </div>
+      <div class="meta-subvalue">${item.html || vFormatDetailValue(item.value, item.mode)}</div>
+    </div>
+  `).join('')}</div>`;
+}
+
+function vRenderDetailsSection(title, body, note) {
+  return `
+    <div class="details-section">
+      <div class="card-title" style="margin:0 0 10px 0">${vEscapeHtml(title)}</div>
+      ${note ? `<div class="details-note" style="margin-bottom:10px">${vEscapeHtml(note)}</div>` : ''}
+      ${body}
+    </div>
+  `;
+}
+
+function vSetOptionsTab(tab) {
+  vOptionsTab = ['settings', 'details'].includes(tab) ? tab : 'settings';
+  ['settings', 'details'].forEach((name) => {
+    const btn = document.getElementById('v_options_tab_' + name);
+    const panel = document.getElementById('v_options_panel_' + name);
+    const active = name === vOptionsTab;
+    if (btn) {
+      btn.classList.toggle('primary', active);
+      btn.classList.toggle('secondary', !active);
+      btn.setAttribute('aria-selected', active ? 'true' : 'false');
+    }
+    if (panel) panel.hidden = !active;
+  });
+  if (vOptionsTab === 'details') vRenderFullDetails();
+}
+
+function vOpenOptions(tab) {
+  const modal = document.getElementById('v_options_modal');
+  if (!modal) return;
+  vSetOptionsTab(tab || 'settings');
+  vRenderFullDetails();
+  modal.style.display = 'flex';
+}
+
+function vCloseOptions() {
+  const modal = document.getElementById('v_options_modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function vBuildDebugPayload() {
+  return {
+    generated_at: new Date().toISOString(),
+    symbol: (document.getElementById('symbol').value || '').trim().toUpperCase(),
+    ui_state: {
+      expiry: document.getElementById('h_expiry_sel')?.value || null,
+      expiry_mode: document.getElementById('expiry_mode')?.value || 'current',
+      pct_window: (parseFloat(document.getElementById('window_input').value || '10') / 100.0) || 0.10,
+      weight_mode: vCurrentWeightMode(),
+      weight_label: vWeightLabel(vCurrentWeightMode()),
+      spot_override_enabled: !!document.getElementById('spot_override_toggle')?.checked,
+      spot_override_value: document.getElementById('spot_override_toggle')?.checked ? ((document.getElementById('spot_override')?.value || '').trim() || null) : null
+    },
+    notes: {
+      charts_follow_page_context: true,
+      options_modal_holds_low_frequency_controls: true
+    },
+    last_request: vLastRequestPayload,
+    last_error: vLastRunError,
+    result: vLastData
+  };
+}
+
+function vRenderFullDetails() {
+  const body = document.getElementById('v_full_details_body');
+  if (!body) return;
+  const payload = vBuildDebugPayload();
+  const meta = (vLastData && vLastData.meta) || {};
+  const stats = meta.stats || {};
+  const net = Array.isArray(vLastData && vLastData.vanna_net) ? (vLastData.vanna_net || []).reduce((sum, value) => sum + (Number(value) || 0), 0) : null;
+  const sections = [];
+
+  sections.push(vRenderDetailsSection('Headline Outputs', vRenderDetailsList([
+    {label:'Net Vanna', value: net, mode:'abbrev', help:'Headline net vanna from the current chart universe.'},
+    {label:'Open Interest', value: stats.oi_sum, mode:'abbrev', help:'Aggregate open interest observed in the fetched option rows.'},
+    {label:'IV Median', value: stats.iv_median, mode:'num', help:'Median implied volatility across the fetched option rows.'},
+    {label:'Contracts', value: stats.n_contracts, help:'Contracts retained in the Vanna snapshot pull.'},
+    {label:'Strikes', value: stats.n_strikes, help:'Unique strikes rendered on the Vanna charts.'},
+    {label:'Updated', value: meta.as_of, help:'Timestamp from the latest completed Vanna run.'}
+  ])));
+
+  sections.push(vRenderDetailsSection('Query Context', vRenderDetailsList([
+    {label:'Selected Expiry', value: payload.ui_state.expiry || '—', help:'Expiry picker state on the page.'},
+    {label:'Scope', value: payload.ui_state.expiry_mode, help:'Current page scope selection.'},
+    {label:'Window', value: `${Math.round((payload.ui_state.pct_window || 0) * 10000) / 100}%`, help:'Strike window centered on spot for the current run.'},
+    {label:'Weighting Mode', value: payload.ui_state.weight_label, help:'Weighting mode currently selected in Vanna Options.'},
+    {label:'Spot Override Enabled', value: payload.ui_state.spot_override_enabled, mode:'bool', help:'Whether the page is using a manual spot override on the next run.'},
+    {label:'Spot Override Value', value: payload.ui_state.spot_override_value || '—', help:'Manual spot override, if enabled.'}
+  ]), 'Expiry, scope, and window remain on the page because the charts are directly tied to that query context.'));
+
+  sections.push(vRenderDetailsSection('Market Snapshot', vRenderDetailsList([
+    {label:'Spot', value: meta.spot, mode:'num', help:'Spot used in the latest Vanna run.'},
+    {label:'After Hours', value: meta.spot_ah, mode:'num', help:'Best-effort after-hours price, when available.'},
+    {label:'RTH Close', value: meta.rth_close, mode:'num', help:'Regular trading hours close from the latest daily history.'},
+    {label:'Previous Close', value: meta.prev_close, mode:'num', help:'Previous close from the provider prev-bar endpoint.'},
+    {label:'Previous Day Close', value: meta.prev_close_yest, mode:'num', help:'Prior day close from Yahoo daily history, when available.'},
+    {label:'Result Meta Keys', html: vRenderTags(Object.keys(meta || {})), help:'Quick view of meta fields returned by the backend.'}
+  ])));
+
+  sections.push(vRenderDetailsSection('Debug Payload', `<pre class="details-pre">${vFormatDetailValue(payload, 'json')}</pre>`));
+  body.innerHTML = sections.join('');
+}
+
+async function vCopyDebugJson() {
+  try {
+    await writeClipboard(JSON.stringify(vBuildDebugPayload(), null, 2));
+    vShowToast('Copied debug data to clipboard');
+  } catch(e) {}
+}
+
+async function startRun(ev) {
+  if (ev && typeof ev.preventDefault === 'function') ev.preventDefault();
+  const sym = document.getElementById('symbol').value.trim().toUpperCase();
+  const hsym = document.getElementById('h_symbol');
+  if (hsym) hsym.textContent = (sym || 'Ticker') + ' — Vanna';
+  if (!sym) {
+    document.getElementById('status').textContent = 'Enter a symbol';
+    return;
+  }
+  const expSel = document.getElementById('h_expiry_sel');
+  const expiry = expSel && expSel.value ? expSel.value : null;
+  const spotToggle = document.getElementById('spot_override_toggle');
+  const spot = (spotToggle && spotToggle.checked) ? document.getElementById('spot_override').value.trim() : '';
+  const weight = vCurrentWeightMode();
+  const pctWindow = (parseFloat(document.getElementById('window_input').value || '10') / 100.0) || 0.10;
+  document.getElementById('status').textContent = 'Starting...';
+  setLogsFromArray([]);
+  document.getElementById('bar_sm').style.width = '5%';
+  const pctEl = document.getElementById('bar_pct');
+  if (pctEl) pctEl.textContent = '5%';
+  isRunning = true;
+  currentStatus = 'starting';
+  vSyncRunStopState(true);
+  clearError();
+  try {
+    const emode = document.getElementById('expiry_mode')?.value || 'current';
+    const isAllScope = emode === 'all';
+    let sendExpiry = expiry;
+    if (isAllScope) sendExpiry = null;
+    vLastRequestPayload = {
+      generated_at: new Date().toISOString(),
+      symbol: sym,
+      spot_override: spot || null,
+      next_only: false,
+      pct_window: pctWindow,
+      expiry: sendExpiry,
+      expiry_mode: emode,
+      weight
+    };
+    vLastRunError = null;
+    try {
+      await fetch('/api/debug/client', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({message:'vanna:request', status:'info', meta:{symbol:sym, expiry:sendExpiry, next_only:false, pct_window:pctWindow, emode, weight}})
       });
-    </script>
-    
+    } catch(e) {}
+    appendLog('POST /api/start ...');
+    const res = await fetch('/api/start', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({symbol:sym, spot_override:spot || null, next_only:false, pct_window:pctWindow, weight, expiry:sendExpiry, expiry_mode:emode})
+    });
+    appendLog('... response ' + res.status);
+    if (!res.ok) throw new Error('Start failed (' + res.status + ')');
+    const payload = await res.json();
+    currentJobId = payload.job_id;
+    activeJobId = currentJobId;
+    try {
+      await fetch('/api/debug/client', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({message:'vanna:job_started', status:'info', meta:{symbol:sym, job_id:currentJobId}})
+      });
+    } catch(e) {}
+    appendLog('Job started: ' + currentJobId);
+    pollStatus(currentJobId);
+    const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const data = await waitForResult(currentJobId);
+    if (activeJobId === currentJobId) {
+      try {
+        await fetch('/api/debug/client', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({message:'vanna:result', status:'info', meta:{symbol:sym, job_id:currentJobId, strikes:(data?.strikes || []).length}})
+        });
+      } catch(e) {}
+      renderCharts(data);
+      try {
+        const params = {
+          expiry: sendExpiry || '',
+          window: String(document.getElementById('window_input').value || ''),
+          spot: spot || '',
+          weight
+        };
+        const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+        const durMs = Math.max(0, t1 - t0);
+        window.__clientPerfMsg = `Job runtime: ${durMs.toFixed ? durMs.toFixed(0) : durMs} ms (cached)`;
+        appendLog(window.__clientPerfMsg);
+        saveVannaCache(sym, params, data, {dur_ms: durMs});
+        if (window.__clientCacheMsg) appendLog(window.__clientCacheMsg);
+      } catch(e) {}
+    }
+    try {
+      const win = document.getElementById('window_input').value || '';
+      const effExpiry = isAllScope ? '' : (expiry || '');
+      const qs = new URLSearchParams({symbol:sym, spot:spot || '', window:win, expiry:effExpiry, weight, emode}).toString();
+      window.history.replaceState(null, '', `/ticker/${SERVER_SYMBOL || sym || ''}?${qs}`);
+    } catch(e) {}
+  } catch (e) {
+    appendLog('ERROR: ' + e.message);
+    document.getElementById('status').textContent = 'Error';
+    vLastRunError = {
+      at: new Date().toISOString(),
+      message: String(e && e.message || e),
+      request: vLastRequestPayload
+    };
+    try {
+      await fetch('/api/debug/client', {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({message:'vanna:render_error', status:'error', meta:{error:String(e && e.message || e)}})
+      });
+    } catch(_e) {}
+  } finally {
+    isRunning = false;
+    if (currentStatus === 'starting') currentStatus = 'idle';
+    vSyncRunStopState(false);
+    if (document.getElementById('v_options_modal')?.style.display === 'flex' && vOptionsTab === 'details') vRenderFullDetails();
+  }
+}
+
+function switchToGex() {
+  const sym = document.getElementById('symbol').value.trim().toUpperCase();
+  if (!sym) return;
+  const spotToggle = document.getElementById('spot_override_toggle');
+  const spot = (spotToggle && spotToggle.checked) ? document.getElementById('spot_override').value.trim() : '';
+  const exp = document.getElementById('h_expiry_sel')?.value || '';
+  const win = document.getElementById('window_input').value || '';
+  const emode = document.getElementById('expiry_mode')?.value || 'current';
+  const effExp = (emode === 'all') ? '' : exp;
+  const qs = new URLSearchParams({symbol:sym, spot, window:win, expiry:effExp, emode, autorun:'1'}).toString();
+  window.location.href = `/gexticker/${SERVER_SYMBOL || sym || ""}?${qs}`;
+}
+
+function switchToVanna() { /* already on Vanna page */ }
+
+async function stopRun() {
+  if (!currentJobId) return;
+  currentStatus = 'stopping';
+  vSyncRunStopState(true);
+  await fetch('/api/stop', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({job_id: currentJobId})});
+  appendLog('Stop requested...');
+}
+
+async function pollStatus(jobId) {
+  let keep = true;
+  while (keep) {
+    if (jobId !== activeJobId) break;
+    const r = await fetch(`/api/status?job_id=${jobId}`);
+    if (!r.ok) {
+      appendLog('Status poll failed: ' + r.status);
+      break;
+    }
+    const s = await r.json();
+    currentStatus = s.status || 'unknown';
+    haveResult = !!s.has_result;
+    const pct = Math.round((s.progress || 0) * 100);
+    document.getElementById('bar_sm').style.width = pct + '%';
+    const pctEl = document.getElementById('bar_pct');
+    if (pctEl) pctEl.textContent = pct + '%';
+    document.getElementById('status').textContent = s.status;
+    if (s.logs && s.logs.length) setLogsFromArray(s.logs);
+    if (s.status === 'error') {
+      showError('Job failed. Use Vanna Options for debug details.');
+      isRunning = false;
+      vSyncRunStopState(false);
+      keep = false;
+    }
+    if (s.status === 'done') {
+      clearError();
+      isRunning = false;
+      vSyncRunStopState(false);
+      keep = false;
+    }
+    if (s.status === 'cancelled') {
+      showError('Job cancelled by user.');
+      isRunning = false;
+      vSyncRunStopState(false);
+      keep = false;
+    }
+    if (keep) await new Promise((resolve) => setTimeout(resolve, 600));
+  }
+}
+
+function updateHeaderMeta(meta) {
+  try {
+    const sp = (meta && meta.spot != null) ? Number(meta.spot) : null;
+    if (sp != null && !Number.isNaN(sp)) {
+      const inp = document.getElementById('spot_override');
+      if (inp && !((inp.value || '').trim())) inp.value = sp.toFixed(2);
+      const spotToggle = document.getElementById('spot_override_toggle');
+      if (spotToggle) setSpotOverrideEnabled(spotToggle.checked);
+    }
+    vUpdateContextBar(meta || {});
+  } catch(e) {}
+}
+
+async function loadExpiries(sym) {
+  try {
+    const r = await fetch(`/api/expiries?symbol=${encodeURIComponent(sym)}`);
+    if (!r.ok) return;
+    const j = await r.json();
+    const el = document.getElementById('h_expiry_sel');
+    if (!el) return;
+    el.innerHTML = '';
+    const exps = j.expiries || [];
+    if (!exps.length) {
+      const o = document.createElement('option');
+      o.value = '';
+      o.textContent = 'No expiries';
+      o.disabled = true;
+      el.appendChild(o);
+    } else {
+      exps.forEach((expiry) => {
+        const o = document.createElement('option');
+        o.value = expiry;
+        o.textContent = expiry;
+        el.appendChild(o);
+      });
+    }
+    try {
+      const key = 'vanna:expiry:' + sym;
+      const saved = localStorage.getItem(key);
+      if (saved && exps.includes(saved)) el.value = saved;
+    } catch(e) {}
+    if (!el.value && exps.length) el.value = exps[0];
+    el.onchange = () => {
+      try { localStorage.setItem('vanna:expiry:' + sym, el.value); } catch(e) {}
+      vUpdateContextBar((vLastData && vLastData.meta) || {});
+    };
+    applyExpiryModeState();
+  } catch(e) {}
+}
+
+function applyDebugState() {
+  const wrap = document.getElementById('debug_wrap');
+  const title = document.getElementById('dbg_title');
+  const btn = document.getElementById('dbg_toggle');
+  if (wrap) wrap.style.display = debugOpen ? 'block' : 'none';
+  if (title) title.textContent = (debugOpen ? '▾ ' : '▸ ') + 'Debug Console';
+  if (btn) btn.textContent = debugOpen ? 'Hide' : 'Show';
+}
+
+function toggleDebug() {
+  debugOpen = !debugOpen;
+  try { localStorage.setItem('debug:open', debugOpen ? '1' : '0'); } catch(e) {}
+  applyDebugState();
+}
+
+function writeClipboard(txt) {
+  try {
+    if (navigator && navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(txt);
+  } catch(e) {}
+  return new Promise((resolve) => {
+    const ta = document.createElement('textarea');
+    ta.value = txt;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+    resolve();
+  });
+}
+
+function vNextFrame() {
+  return new Promise((resolve) => {
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(() => resolve());
+    } else {
+      setTimeout(resolve, 16);
+    }
+  });
+}
+
+function positionMenu(el, btnId) {
+  try {
+    const btn = document.getElementById(btnId);
+    if (!btn || !el) return;
+    const r = btn.getBoundingClientRect();
+    el.style.position = 'fixed';
+    el.style.top = (Math.round((r.bottom || 60) + 10)) + 'px';
+    el.style.right = Math.max(12, Math.round(window.innerWidth - r.right) + 12) + 'px';
+    el.style.zIndex = '10000';
+  } catch(e) {}
+}
+
+function toggleMenu(force) {
+  const el = document.getElementById('menu_panel');
+  if (!el) return;
+  if (typeof force === 'boolean') {
+    if (force) {
+      positionMenu(el, 'menu_btn');
+      el.style.display = 'block';
+    } else {
+      el.style.display = 'none';
+    }
+    return;
+  }
+  const show = (el.style.display === 'none' || !el.style.display);
+  if (show) {
+    positionMenu(el, 'menu_btn');
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+window.addEventListener('resize', () => {
+  const el = document.getElementById('menu_panel');
+  if (el && el.style.display === 'block') positionMenu(el, 'menu_btn');
+});
+
+function setupOutsideClose(panelId, btnId, closerName) {
+  document.addEventListener('click', (e) => {
+    try {
+      const p = document.getElementById(panelId);
+      const b = document.getElementById(btnId);
+      if (!p) return;
+      if (p.style.display !== 'block') return;
+      const t = e.target;
+      if (p.contains(t) || (b && b.contains(t))) return;
+      if (typeof window[closerName] === 'function') window[closerName](false);
+    } catch(ex) {}
+  });
+}
+
+setupOutsideClose('menu_panel', 'menu_btn', 'toggleMenu');
+
+const EVENTS = [
+  {date:'2025-10-01', title:'FOMC Rate Decision', time:'14:00 ET'},
+  {date:'2025-10-02', title:'Initial Jobless Claims', time:'08:30 ET'},
+];
+
+function getEventButton() { return document.getElementById('ev_btn') || document.getElementById('g_ev_btn'); }
+function _lsGet(k, defv=null) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : defv; } catch(e) { return defv; } }
+function _lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e) {} }
+
+async function eventsFetch(sym) {
+  const key = 'events:last:' + (sym || 'ALL');
+  const cache = _lsGet(key, null);
+  const now = Date.now();
+  if (cache && (now - (cache.ts || 0) < 60 * 1000)) return cache.data;
+  try {
+    const r = await fetch(`/api/events?symbol=${encodeURIComponent(sym || '')}`);
+    if (!r.ok) throw new Error('events fetch failed');
+    const data = await r.json();
+    _lsSet(key, {ts: now, data});
+    return data;
+  } catch(e) {
+    return cache ? cache.data : {polygon: [], econ: []};
+  }
+}
+
+function unseenCount(sym, data) {
+  const seenP = new Set(_lsGet('events:seen:polygon', []));
+  const seenE = new Set(_lsGet('events:seen:econ', []));
+  let u = 0;
+  (data.polygon || []).forEach((a) => { if (!seenP.has(String(a.id || a.url || a.title))) u++; });
+  (data.econ || []).forEach((a) => { if (!seenE.has(String(a.id || a.url || a.title))) u++; });
+  return u;
+}
+
+async function updateEventButtonHighlight() {
+  const btn = getEventButton();
+  if (!btn) return;
+  const sym = (document.getElementById('symbol')?.value || document.getElementById('g_symbol')?.value || '').trim().toUpperCase();
+  const data = await eventsFetch(sym);
+  const unseen = unseenCount(sym, data);
+  btn.className = 'btn ' + (unseen > 0 ? 'primary' : 'secondary');
+}
+
+function ensureEventPanel() {
+  let el = document.getElementById('events_panel');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'events_panel';
+    el.className = 'card';
+    el.style.cssText = 'position:fixed; z-index:100; width:min(900px, 54vw); max-width:95vw; max-height:72vh; overflow:auto; box-shadow:0 8px 24px rgba(0,0,0,.6)';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+function positionEventPanel(el) {
+  const btn = getEventButton();
+  if (!btn) return;
+  const r = btn.getBoundingClientRect();
+  const top = Math.round((r.bottom || 60) + 10);
+  const right = Math.max(12, Math.round(window.innerWidth - r.right) + 12);
+  el.style.top = top + 'px';
+  el.style.right = right + 'px';
+  el.style.left = '';
+}
+
+async function toggleEvents() {
+  const el = ensureEventPanel();
+  const show = (el.style.display === 'none' || !el.style.display);
+  if (show) {
+    await renderEvents(el);
+    positionEventPanel(el);
+    el.style.display = 'block';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+async function renderEvents(el) {
+  try {
+    const sym = (document.getElementById('symbol')?.value || document.getElementById('g_symbol')?.value || '').trim().toUpperCase();
+    const data = await eventsFetch(sym);
+    let html = `<div style='display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;background:#111827;padding-bottom:6px'><h3 style='margin:0'>Events & News</h3><button class='btn secondary' onclick="toggleEvents()">Close</button></div>`;
+    function renderSection(title, arr) {
+      const items = (arr || []).map((a) => {
+        const t = a.title || '';
+        const url = a.url || '#';
+        const ts = a.published || '';
+        return `<div style='margin:10px 0'><a href='${url}' target='_blank' rel='noopener' style='color:#93c5fd;text-decoration:none;font-weight:600'>${t}</a> <span class='muted'>— ${ts}</span></div>`;
+      }).join('');
+      return `<div class='card' style='margin-top:10px'><h4 style='margin:0 0 6px 0'>${title}</h4>${items || `<span class='muted'>None</span>`}</div>`;
+    }
+    html += renderSection('Ticker News (Massive)', data.polygon);
+    html += renderSection('Economic News', data.econ);
+    try {
+      const rows = (EVENTS || []).map((e) => `<div style='margin:6px 0'><strong>${e.title}</strong> <span class='muted'>— ${e.date} ${e.time || ''}</span></div>`).join('');
+      html += `<div class='card' style='margin-top:10px'><h4 style='margin:0 0 6px 0'>Upcoming Economic Events (FYI)</h4>${rows || `<span class='muted'>None</span>`}</div>`;
+    } catch(e) {}
+    el.innerHTML = html;
+    const seenP = new Set(_lsGet('events:seen:polygon', []));
+    const seenE = new Set(_lsGet('events:seen:econ', []));
+    const idsP = (data.polygon || []).map((a) => String(a.id || a.url || a.title));
+    const idsE = (data.econ || []).map((a) => String(a.id || a.url || a.title));
+    idsP.forEach((id) => seenP.add(id));
+    idsE.forEach((id) => seenE.add(id));
+    _lsSet('events:seen:polygon', Array.from(seenP));
+    _lsSet('events:seen:econ', Array.from(seenE));
+    try { fetch('/api/events/ack', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({seen:{polygon:idsP, econ:idsE}})}); } catch(e) {}
+    updateEventButtonHighlight();
+  } catch(e) {
+    el.innerHTML = '<div class=muted>Error loading events</div>';
+  }
+}
+
+window.addEventListener('resize', () => {
+  const el = document.getElementById('events_panel');
+  if (el && el.style.display === 'block') positionEventPanel(el);
+});
+
+function updateVannaSeries(sym, net) {
+  try {
+    const key = 'vanna:series:' + sym;
+    const now = Date.now();
+    let arr = JSON.parse(localStorage.getItem(key) || '[]');
+    if (!Array.isArray(arr)) arr = [];
+    arr.push({ts: now, net: Number(net) || 0});
+    if (arr.length > 20) arr = arr.slice(-20);
+    localStorage.setItem(key, JSON.stringify(arr));
+  } catch(e) {}
+}
+
+async function copyPairs() {
+  if (!currentJobId) {
+    appendLog('No job to export');
+    return;
+  }
+  try {
+    const r = await fetch(`/api/export/pairs?job_id=${currentJobId}`);
+    if (!r.ok) throw new Error('Export failed');
+    const j = await r.json();
+    await writeClipboard(j.pairs || '');
+    appendLog('Copied TV pairs to clipboard');
+  } catch(e) {
+    appendLog('ERROR export pairs: ' + e.message);
+  }
+}
+
+async function copyPine() {
+  if (!currentJobId) {
+    appendLog('No job to export');
+    return;
+  }
+  try {
+    const r = await fetch(`/api/export/pine?job_id=${currentJobId}`);
+    if (!r.ok) throw new Error('Export failed');
+    const j = await r.json();
+    await writeClipboard(j.pine || '');
+    appendLog('Copied Pine script to clipboard');
+  } catch(e) {
+    appendLog('ERROR export pine: ' + e.message);
+  }
+}
+
+function showError(msg) {
+  const el = document.getElementById('error_banner');
+  if (!el) return;
+  el.textContent = msg || 'Error';
+  el.style.display = 'block';
+}
+
+function clearError() {
+  const el = document.getElementById('error_banner');
+  if (!el) return;
+  el.textContent = '';
+  el.style.display = 'none';
+}
+
+async function waitForResult(jobId) {
+  const startTs = Date.now();
+  while (true) {
+    if (jobId !== activeJobId) throw new Error('Superseded by a new run');
+    const st = await fetch(`/api/status?job_id=${jobId}`);
+    if (!st.ok) throw new Error('Status fetch failed');
+    const s = await st.json();
+    const status = s.status || 'unknown';
+    if (status === 'error') throw new Error('Job error');
+    if (status === 'cancelled') throw new Error('Job cancelled');
+    const r = await fetch(`/api/result?job_id=${jobId}`);
+    if (r.status !== 204) {
+      if (!r.ok) throw new Error('Failed fetching result');
+      return await r.json();
+    }
+    if (Date.now() - startTs > 180000) throw new Error('Timeout waiting for result');
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+}
+
+function applySymbolPresets() {
+  const sym = document.getElementById('symbol').value.trim().toUpperCase();
+  if (sym.startsWith('SPX') && !windowDirty) {
+    const el = document.getElementById('window_input');
+    const v = parseFloat(el.value || '10');
+    if (!v || v > 4) el.value = '3';
+  }
+}
+
+function renderCharts(d) {
+  const renderToken = ++vChartRenderToken;
+  vLastData = d;
+  const x = d.strikes || [];
+  const vnet = (d.vanna_net || []).map(Number);
+  const vc = (d.vanna_calls || []).map(Number);
+  const vp = (d.vanna_puts || []).map(Number);
+  updateHeaderMeta(d.meta || {});
+  try {
+    const sym = (d.meta && d.meta.symbol) || document.getElementById('symbol')?.value?.trim()?.toUpperCase() || '';
+    const net = vnet.reduce((a, b) => a + (b || 0), 0);
+    const key = 'vanna:series:' + sym;
+    let prev = null;
+    try {
+      const arr = JSON.parse(localStorage.getItem(key) || '[]');
+      if (Array.isArray(arr) && arr.length) prev = arr[arr.length - 1].net;
+    } catch(e) {}
+    const delta = (prev !== null && prev !== undefined) ? (net - prev) : null;
+    const st = (d.meta && d.meta.stats) || {};
+    const oi = (st.oi_sum != null) ? fmtAbbrev(Number(st.oi_sum) || 0) : null;
+    const iv = (st.iv_median != null) ? Number(st.iv_median).toFixed(2) : null;
+    const netEl = document.getElementById('h_net');
+    if (netEl) netEl.textContent = fmtAbbrev(net);
+    const deltaEl = document.getElementById('h_net_delta');
+    if (deltaEl) deltaEl.textContent = (delta === null) ? 'Delta vs last —' : ('Delta vs last ' + (delta >= 0 ? '+' : '-') + fmtAbbrev(Math.abs(delta)));
+    const oiEl = document.getElementById('h_oi');
+    if (oiEl && oi !== null) oiEl.textContent = oi;
+    const ivEl = document.getElementById('h_iv');
+    if (ivEl && iv !== null) ivEl.textContent = iv;
+    updateVannaSeries(sym, net);
+  } catch(e) {}
+  const gridcolor = 'rgba(148,163,184,0.12)';
+  const axisColor = '#cbd5e1';
+  const tickColor = '#b8c4d4';
+  const plotBg = '#0b1220';
+  const guideColor = 'rgba(226,232,240,0.84)';
+  const afterHoursColor = 'rgba(210,192,150,0.82)';
+  const hoverlabel = {bgcolor:'#0f172a', bordercolor:'rgba(148,163,184,0.22)', font:{color:'#e5e7eb'}};
+  const absmax = Math.max(1e-12, ...vnet.map((v) => Math.abs(v)), ...vc.map((v) => Math.abs(v)), ...vp.map((v) => Math.abs(v)));
+  let factor = 1;
+  let suffix = '';
+  const scales = [1, 1e3, 1e6, 1e9];
+  for (const f of scales) {
+    if (absmax * f >= 1 && absmax * f < 1000) {
+      factor = f;
+      break;
+    }
+  }
+  if (factor === 1e3) suffix = ' (x1e3)';
+  else if (factor === 1e6) suffix = ' (x1e6)';
+  else if (factor === 1e9) suffix = ' (x1e9)';
+  const ynet = vnet.map((v) => v * factor);
+  const yvc = vc.map((v) => v * factor);
+  const yvp = vp.map((v) => v * factor);
+  const spot = (d.meta && Number(d.meta.spot)) || null;
+  const spotAH = (d.meta && Number(d.meta.spot_ah)) || null;
+  const dayRef = (d.meta && d.meta.prev_close_yest != null) ? Number(d.meta.prev_close_yest) : ((d.meta && d.meta.prev_close != null) ? Number(d.meta.prev_close) : null);
+  const rthClose = (d.meta && d.meta.rth_close != null) ? Number(d.meta.rth_close) : null;
+  const yMinA = Math.min(0, ...yvc, ...yvp, ...ynet);
+  const yMaxA = Math.max(0, ...yvc, ...yvp, ...ynet);
+  const extraA = [];
+  if (spot) {
+    const pct = (dayRef ? ((spot - dayRef) / dayRef * 100.0) : null);
+    const txt = 'Spot: ' + spot.toFixed(2) + (pct == null ? '' : (' (' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%)'));
+    extraA.push({x:[spot, spot], y:[yMinA, yMaxA], type:'scatter', mode:'lines', name:'Spot', hoverinfo:'text', text:[txt, txt], line:{color:guideColor, width:1.5, dash:'dot'}, showlegend:false});
+  }
+  if (spotAH) {
+    const pct = (rthClose ? ((spotAH - rthClose) / rthClose * 100.0) : null);
+    const delta = (rthClose ? (spotAH - rthClose) : null);
+    let txt = 'After-hours: ' + spotAH.toFixed(2);
+    if (pct != null) txt += ' (' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+    if (delta != null) txt += ', ' + (delta >= 0 ? '+' : '') + delta.toFixed(2) + ')';
+    extraA.push({x:[spotAH, spotAH], y:[yMinA, yMaxA], type:'scatter', mode:'lines', name:'After-hours', hoverinfo:'text', text:[txt, txt], line:{color:afterHoursColor, width:1.5, dash:'dot'}, opacity:0.9, showlegend:false});
+  }
+  const netEl = document.getElementById('chart_net');
+  const splitEl = document.getElementById('chart_split');
+  if (!netEl || !splitEl || !window.Plotly || typeof window.Plotly.newPlot !== 'function') return;
+  let csum = [];
+  let acc = 0;
+  for (let i = 0; i < ynet.length; i++) {
+    acc += (ynet[i] || 0);
+    csum.push(acc);
+  }
+  const yMinB = Math.min(0, ...csum);
+  const yMaxB = Math.max(0, ...csum);
+  const extraB = [];
+  if (spot) {
+    const pct = (dayRef ? ((spot - dayRef) / dayRef * 100.0) : null);
+    const txt = 'Spot: ' + spot.toFixed(2) + (pct == null ? '' : (' (' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%)'));
+    extraB.push({x:[spot, spot], y:[yMinB, yMaxB], type:'scatter', mode:'lines', name:'Spot', hoverinfo:'text', text:[txt, txt], line:{color:guideColor, width:1.5, dash:'dot'}, showlegend:false});
+  }
+  if (spotAH) {
+    const pct = (rthClose ? ((spotAH - rthClose) / rthClose * 100.0) : null);
+    const delta = (rthClose ? (spotAH - rthClose) : null);
+    let txt = 'After-hours: ' + spotAH.toFixed(2);
+    if (pct != null) txt += ' (' + (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+    if (delta != null) txt += ', ' + (delta >= 0 ? '+' : '') + delta.toFixed(2) + ')';
+    extraB.push({x:[spotAH, spotAH], y:[yMinB, yMaxB], type:'scatter', mode:'lines', name:'After-hours', hoverinfo:'text', text:[txt, txt], line:{color:afterHoursColor, width:1.5, dash:'dot'}, opacity:0.9, showlegend:false});
+  }
+  const layoutA = {
+    barmode:'relative',
+    paper_bgcolor:plotBg,
+    plot_bgcolor:plotBg,
+    font:{color:'#d5dbe5'},
+    hoverlabel,
+    legend:{orientation:'h', y:1.08, x:0, bgcolor:'rgba(15,23,42,0.45)', bordercolor:'rgba(148,163,184,0.08)', borderwidth:1, font:{color:'#d5dbe5'}},
+    xaxis:{title:{text:'Strike', font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', zeroline:false},
+    yaxis:{title:{text:'Vanna' + suffix, font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', autorange:true, zerolinecolor:'rgba(148,163,184,0.14)'},
+    margin:{t:24}
+  };
+  const layoutB = {
+    paper_bgcolor:plotBg,
+    plot_bgcolor:plotBg,
+    font:{color:'#d5dbe5'},
+    hoverlabel,
+    legend:{orientation:'h', y:1.08, x:0, bgcolor:'rgba(15,23,42,0.45)', bordercolor:'rgba(148,163,184,0.08)', borderwidth:1, font:{color:'#d5dbe5'}},
+    xaxis:{title:{text:'Strike', font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', zeroline:false},
+    yaxis:{title:{text:'Accumulated Net Vanna' + suffix, font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', autorange:true, zerolinecolor:'rgba(148,163,184,0.14)'},
+    margin:{t:24}
+  };
+  const config = {displayModeBar:false, responsive:true};
+  Promise.resolve()
+    .then(() => vNextFrame())
+    .then(() => vNextFrame())
+    .then(() => {
+      if (renderToken !== vChartRenderToken) return null;
+      return Promise.all([
+        Plotly.newPlot(netEl, [{x, y:yvc, type:'bar', name:'Calls'}, {x, y:yvp, type:'bar', name:'Puts'}].concat(extraA), layoutA, config),
+        Plotly.newPlot(splitEl, [{x, y:csum, type:'scatter', mode:'lines+markers', name:'Accumulated'}].concat(extraB), layoutB, config)
+      ]);
+    })
+    .then(() => {
+      if (renderToken !== vChartRenderToken) return;
+      try {
+        if (window.Plotly && window.Plotly.Plots && typeof window.Plotly.Plots.resize === 'function') {
+          window.Plotly.Plots.resize(netEl);
+          window.Plotly.Plots.resize(splitEl);
+          setTimeout(() => {
+            try {
+              if (renderToken !== vChartRenderToken) return;
+              window.Plotly.Plots.resize(netEl);
+              window.Plotly.Plots.resize(splitEl);
+            } catch(e) {}
+          }, 50);
+        }
+      } catch(e) {}
+      if (document.getElementById('v_options_modal')?.style.display === 'flex' && vOptionsTab === 'details') vRenderFullDetails();
+    })
+    .catch((err) => {
+      appendLog('ERROR render charts: ' + (err && err.message ? err.message : err));
+    });
+}
+
+function saveVannaCache(sym, params, data, metrics) {
+  try { localStorage.setItem('vanna:cache:' + sym, JSON.stringify({ts:Date.now(), params, data, metrics:(metrics || {})})); } catch(e) {}
+}
+
+function loadVannaCache(sym) {
+  try { return JSON.parse(localStorage.getItem('vanna:cache:' + sym) || 'null'); } catch(e) { return null; }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const s = document.getElementById('symbol').value.trim();
+  try {
+    if (!s) {
+      const m = (location.pathname || '').match(/\/ticker\/(.+)$/);
+      if (m && m[1]) document.getElementById('symbol').value = decodeURIComponent(m[1]);
+    }
+  } catch(e) {}
+  try {
+    const url = new URL(window.location.href);
+    const qspot = url.searchParams.get('spot');
+    if (qspot !== null && String(qspot).trim() !== '') {
+      const spotEl = document.getElementById('spot_override');
+      if (spotEl) spotEl.value = qspot;
+      vSpotFromUrl = true;
+      const box = document.getElementById('spot_override_toggle');
+      if (box) box.checked = true;
+    }
+    const qwin = url.searchParams.get('window');
+    if (qwin !== null) {
+      document.getElementById('window_input').value = qwin;
+      vWindowFromUrl = true;
+    }
+    const qemode = url.searchParams.get('emode');
+    if (qemode) {
+      const el = document.getElementById('expiry_mode');
+      if (el) el.value = qemode;
+    }
+    const qweight = url.searchParams.get('weight');
+    if (qweight) {
+      const wEl = document.querySelector(`input[name=weight][value='${qweight}']`);
+      if (wEl) {
+        wEl.checked = true;
+        vWeightFromUrl = true;
+      }
+    }
+  } catch(e) {}
+  const symNow = (document.getElementById('symbol').value || '').trim();
+  if (symNow) loadExpiries(symNow);
+  try {
+    const sym = (document.getElementById('symbol').value || '').trim().toUpperCase();
+    const winSaved = localStorage.getItem('vanna:window:' + sym) || localStorage.getItem('vanna:window');
+    if (winSaved !== null && !vWindowFromUrl) document.getElementById('window_input').value = winSaved;
+  } catch(e) {}
+  document.getElementById('window_input').addEventListener('input', () => {
+    windowDirty = true;
+    try { localStorage.setItem('vanna:window', document.getElementById('window_input').value); } catch(e) {}
+  });
+  document.getElementById('window_input').addEventListener('change', () => {
+    try {
+      const sym = (document.getElementById('symbol').value || '').trim().toUpperCase();
+      localStorage.setItem('vanna:window:' + sym, document.getElementById('window_input').value);
+    } catch(e) {}
+    if (document.getElementById('v_options_modal')?.style.display === 'flex' && vOptionsTab === 'details') vRenderFullDetails();
+  });
+  try {
+    const box = document.getElementById('spot_override_toggle');
+    if (box) {
+      box.addEventListener('change', () => setSpotOverrideEnabled(box.checked));
+      setSpotOverrideEnabled(box.checked || vSpotFromUrl);
+    }
+  } catch(e) {}
+  document.getElementById('spot_override')?.addEventListener('input', () => {
+    if (document.getElementById('v_options_modal')?.style.display === 'flex' && vOptionsTab === 'details') vRenderFullDetails();
+  });
+  document.getElementById('symbol').addEventListener('input', applySymbolPresets);
+  for (const el of document.querySelectorAll('input[name=weight]')) {
+    el.addEventListener('change', () => {
+      try { localStorage.setItem('vanna:weight', el.value); } catch(e) {}
+      vSyncWeightDisplay();
+    });
+  }
+  try {
+    const savedWeight = localStorage.getItem('vanna:weight');
+    if (savedWeight && !vWeightFromUrl) {
+      const wEl = document.querySelector(`input[name=weight][value='${savedWeight}']`);
+      if (wEl) wEl.checked = true;
+    }
+  } catch(e) {}
+  try {
+    const el = document.getElementById('expiry_mode');
+    const saved = localStorage.getItem('vanna:emode');
+    if (el) {
+      if (saved) el.value = saved;
+      else {
+        el.value = el.value || 'current';
+        localStorage.setItem('vanna:emode', el.value);
+      }
+      el.addEventListener('change', () => {
+        try { localStorage.setItem('vanna:emode', el.value); } catch(e) {}
+        applyExpiryModeState();
+      });
+    }
+  } catch(e) {}
+  try {
+    const d = localStorage.getItem('debug:open');
+    if (d !== null) debugOpen = (d === '1');
+  } catch(e) {}
+  applyDebugState();
+  vSyncWeightDisplay();
+  vSyncRunStopState(false);
+  updateEventButtonHighlight();
+  appendLog('UI ready');
+  applySymbolPresets();
+  applyExpiryModeState();
+  vSetOptionsTab('settings');
+  document.getElementById('v_options_modal')?.addEventListener('click', (ev) => {
+    if (ev.target && ev.target.id === 'v_options_modal') vCloseOptions();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape' && document.getElementById('v_options_modal')?.style.display === 'flex') vCloseOptions();
+  });
+});
+</script>
+
 {% endblock %}

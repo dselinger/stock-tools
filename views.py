@@ -3,8 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from datetime import datetime
-from math import isfinite
+from datetime import datetime, timezone
 from typing import Optional
 
 import httpx
@@ -16,13 +15,17 @@ from core.cache import (
     cache_key,
     disk_cache_get,
     disk_cache_set,
-    load_gex_trend_history,
-    recompute_flip_from_arrays,
-    recompute_micro_flip_from_arrays,
-    upsert_gex_trend_history,
-    upsert_oi_history,
 )
-from core.demo_data import demo_gex_result, demo_scanner_row, demo_vanna_result
+from core.demo_data import demo_expiries, demo_gex_result, demo_scanner_row, demo_vanna_result
+from core.gamma_math import (
+    canonicalize_gex_payload,
+    gamma_solver_cache_token,
+    gamma_solver_profile_label,
+    normalize_gamma_solver_config,
+    scanner_scope_expirations,
+    spot_vs_zero_gamma_label,
+    spot_vs_zero_gamma_pct,
+)
 from core.web import (
     FALLBACK_FAVS,
     FAVICON_SVG,
@@ -31,10 +34,10 @@ from core.web import (
     scanner_max_workers,
 )
 from engine import (
+    Job,
     compute_gex_for_ticker,
     compute_vanna_for_ticker,
     event_log,
-    fetch_oi_iv_by_filters,
     fetch_spot_yahoo,
     job_manager,
     polygon_get,
@@ -52,6 +55,25 @@ router.include_router(events_router)
 
 DEMO_MODE_DEFAULT = os.getenv("DEMO_MODE", "0") == "1"
 DEMO_MODE_COOKIE = "demo_mode"
+
+
+def _canonicalize_gex_result(payload: dict) -> dict:
+    """Keep all GEX views and caches aligned on the same canonical gamma series."""
+    return canonicalize_gex_payload(payload)
+
+
+def _payload_solver_config(payload: dict | None) -> dict:
+    raw = (payload or {}).get("solver_config")
+    return normalize_gamma_solver_config(raw if isinstance(raw, dict) else None)
+
+
+def _payload_remove_0dte(payload: dict | None, *, default: bool = False) -> bool:
+    data = payload or {}
+    if "remove_0dte" in data:
+        return bool(data.get("remove_0dte"))
+    if "include_0dte" in data:
+        return not bool(data.get("include_0dte"))
+    return bool(default)
 
 
 def get_demo_mode(request: Request | None = None) -> bool:
@@ -693,35 +715,15 @@ async def _list_expiry_dates(symbol: str) -> list[str]:
 
 
 @router.get("/api/expiries")
-async def api_list_expiries(symbol: str):
+async def api_list_expiries(request: Request, symbol: str):
     try:
         await event_log.add("api", "/api/expiries", "request", {"symbol": symbol})
     except Exception:
         pass
+    if get_demo_mode(request):
+        return JSONResponse({"symbol": symbol.upper(), "expiries": demo_expiries(symbol)})
     exp = await _list_expiry_dates(symbol)
     return JSONResponse({"symbol": symbol.upper(), "expiries": exp})
-
-
-# ------------------------------
-# Scanner API (gamma watchlist)
-# ------------------------------
-def _pick_weekly_monthly(expiries: list[str]) -> tuple[Optional[str], Optional[str]]:
-    """Heuristic: first expiry is near-term (weekly); first 3rd Friday is monthly."""
-    weekly = expiries[0] if expiries else None
-    monthly = None
-    for e in expiries:
-        try:
-            from datetime import date
-
-            dt = date.fromisoformat(e[:10])
-            if dt.weekday() == 4 and 15 <= dt.day <= 21:
-                monthly = e
-                break
-        except Exception:
-            continue
-    if monthly is None and len(expiries) >= 2:
-        monthly = expiries[1]
-    return weekly, monthly
 
 
 def _pct_delta(val: float | None, ref: float | None) -> Optional[float]:
@@ -731,63 +733,6 @@ def _pct_delta(val: float | None, ref: float | None) -> Optional[float]:
         return (float(val) - float(ref)) / float(ref) * 100.0
     except Exception:
         return None
-
-
-async def _fetch_expected_move(symbol: str, spot: float, expiries: list[str]) -> dict:
-    """Approximate expected move using ATM IV for nearest expiry: +/- spot*iv*sqrt(T)."""
-    if not spot or spot <= 0 or not expiries:
-        return {"exp_move": None, "exp_move_pct": None, "expiry": None}
-    sym = symbol.upper()
-    expiry = expiries[0]
-    try:
-        from datetime import datetime, timezone
-
-        dt = datetime.fromisoformat(expiry[:10])
-        T_years = max(
-            (dt.replace(tzinfo=timezone.utc).timestamp() - time.time()) / (365 * 24 * 3600), 1 / 365
-        )
-    except Exception:
-        T_years = 7 / 365
-    strike_base = round(float(spot))
-    ivs = []
-    try:
-        async with httpx.AsyncClient() as client:
-            ladders = [0, 1, -1, 2, -2, 5, -5]
-            underlyings = [sym, f"I:{sym}"]
-            if not sym.endswith("W"):
-                underlyings.append(sym + "W")
-            for u in underlyings:
-                for delta in ladders:
-                    k = strike_base + delta
-                    for opt_type in ("call", "put"):
-                        try:
-                            data = await fetch_oi_iv_by_filters(client, u, k, expiry, opt_type)
-                            if data and data.get("iv") is not None:
-                                ivs.append(float(data["iv"]))
-                        except Exception:
-                            continue
-                    if ivs:
-                        break
-                if ivs:
-                    break
-    except Exception:
-        pass
-    iv = None
-    try:
-        if ivs:
-            iv = sum(ivs) / len(ivs)
-    except Exception:
-        iv = None
-    if iv is None:
-        return {"exp_move": None, "exp_move_pct": None, "expiry": expiry}
-    try:
-        from math import sqrt
-
-        move_abs = float(spot) * float(iv) * sqrt(T_years)
-        move_pct = (move_abs / float(spot)) * 100.0 if spot else None
-        return {"exp_move": move_abs, "exp_move_pct": move_pct, "expiry": expiry}
-    except Exception:
-        return {"exp_move": None, "exp_move_pct": None, "expiry": expiry}
 
 
 async def _fetch_price_context(symbol: str) -> dict:
@@ -871,28 +816,33 @@ async def _fetch_price_context(symbol: str) -> dict:
     }
 
 
-async def _compute_gex_cached_flip(
+async def _compute_gex_cached_summary(
     symbol: str,
     spot: float,
     pct_window: float,
     *,
-    expiry_override: Optional[str],
+    expiry_key: Optional[str],
     expiry_mode: str,
     next_only: bool,
+    remove_0dte: bool,
+    allowed_expiries: list[str] | None = None,
     label: str = "",
     parent_job_id: Optional[str] = None,
 ) -> dict:
     ttl = int(os.getenv("SERVER_CACHE_TTL_SEC", "300"))
-    cache_window = pct_window
     key = cache_key(
         mode="g",
         symbol=symbol,
-        pct_window=cache_window,
+        pct_window=pct_window,
         next_only=next_only,
-        expiry=expiry_override,
+        expiry=expiry_key,
         weight="",
         spot_override=None,
         expiry_mode=expiry_mode,
+        include_0dte=(not remove_0dte),
+        expiry_filter=",".join(sorted(allowed_expiries or [])),
+        solver_profile=gamma_solver_cache_token(None),
+        calc_version="gamma-v4",
     )
     cached = job_manager.cache_get(key, ttl)
     res: dict
@@ -926,9 +876,10 @@ async def _compute_gex_cached_flip(
                     "scanner:gex",
                     {
                         "symbol": symbol,
-                        "label": label or "total",
-                        "expiry": expiry_override or "all",
+                        "label": label or "all",
+                        "expiry": expiry_key or "all",
                         "expiry_mode": expiry_mode,
+                        "remove_0dte": remove_0dte,
                         "cached": False,
                         "parent_job_id": parent_job_id,
                         "cache_source": cache_source,
@@ -944,7 +895,10 @@ async def _compute_gex_cached_flip(
                     pct_window=pct_window,
                     only_next_expiry=next_only,
                     expiry_mode=expiry_mode,
-                    expiry_override=expiry_override,
+                    expiry_override=None,
+                    include_0dte=(not remove_0dte),
+                    remove_0dte=remove_0dte,
+                    allowed_expiries=allowed_expiries,
                 )
             except Exception as e:  # noqa: BLE001
                 job.status = "error"
@@ -967,9 +921,42 @@ async def _compute_gex_cached_flip(
                             "expiry": (meta.get("expiry") if isinstance(meta, dict) else None),
                             "spot": float(spot),
                             "pct_window": float(pct_window),
-                            **(
-                                {"gex_flip": float(meta.get("gex_flip"))}
-                                if isinstance(meta, dict) and meta.get("gex_flip") is not None
+                            "include_0dte": bool(not remove_0dte),
+                            "remove_0dte": bool(remove_0dte),
+                            "net_gex": (
+                                float(meta.get("net_gex"))
+                                if isinstance(meta, dict) and meta.get("net_gex") is not None
+                                else 0.0
+                            ),
+                            "total_gamma_at_spot": (
+                                float(meta.get("total_gamma_at_spot"))
+                                if isinstance(meta, dict)
+                                and meta.get("total_gamma_at_spot") is not None
+                                else 0.0
+                            ),
+                            "zero_gamma": (
+                                float(meta.get("zero_gamma"))
+                                if isinstance(meta, dict) and meta.get("zero_gamma") is not None
+                                else None
+                            ),
+                            "spot_vs_zero_gamma": (
+                                meta.get("spot_vs_zero_gamma")
+                                if isinstance(meta, dict)
+                                else "No Zero Gamma in tested range"
+                            ),
+                            "gamma_regime": (
+                                meta.get("gamma_regime")
+                                if isinstance(meta, dict)
+                                else "Gamma Regime Unavailable"
+                            ),
+                            "zero_gamma_diagnostics": (
+                                dict(meta.get("zero_gamma_diagnostics") or {})
+                                if isinstance(meta, dict)
+                                else {}
+                            ),
+                            "provider_listing": (
+                                dict(meta.get("provider_listing") or {})
+                                if isinstance(meta, dict)
                                 else {}
                             ),
                             **(
@@ -1000,12 +987,47 @@ async def _compute_gex_cached_flip(
                         "expiry": (meta.get("expiry") if isinstance(meta, dict) else None),
                         "spot": float(spot),
                         "pct_window": float(pct_window),
+                        "include_0dte": bool(not remove_0dte),
+                        "remove_0dte": bool(remove_0dte),
+                        "net_gex": (
+                            float(meta.get("net_gex"))
+                            if isinstance(meta, dict) and meta.get("net_gex") is not None
+                            else float(sum(gnet))
+                        ),
+                        "total_gamma_at_spot": (
+                            float(meta.get("total_gamma_at_spot"))
+                            if isinstance(meta, dict) and meta.get("total_gamma_at_spot") is not None
+                            else float(sum(gnet))
+                        ),
+                        "zero_gamma": (
+                            float(meta.get("zero_gamma"))
+                            if isinstance(meta, dict) and meta.get("zero_gamma") is not None
+                            else None
+                        ),
+                        "spot_vs_zero_gamma": (
+                            meta.get("spot_vs_zero_gamma")
+                            if isinstance(meta, dict)
+                            else spot_vs_zero_gamma_label(
+                                spot,
+                                meta.get("zero_gamma") if isinstance(meta, dict) else None,
+                            )
+                        ),
+                        "gamma_regime": (
+                            meta.get("gamma_regime")
+                            if isinstance(meta, dict)
+                            else "Gamma Regime Unavailable"
+                        ),
+                        "zero_gamma_diagnostics": (
+                            dict(meta.get("zero_gamma_diagnostics") or {})
+                            if isinstance(meta, dict)
+                            else {}
+                        ),
+                        "provider_listing": (
+                            dict(meta.get("provider_listing") or {})
+                            if isinstance(meta, dict)
+                            else {}
+                        ),
                     }
-                    try:
-                        if isinstance(meta, dict) and meta.get("gex_flip") is not None:
-                            _meta["gex_flip"] = float(meta.get("gex_flip"))
-                    except Exception:
-                        pass
                     try:
                         if isinstance(meta, dict) and meta.get("total_oi") is not None:
                             _meta["total_oi"] = float(meta.get("total_oi"))
@@ -1016,8 +1038,15 @@ async def _compute_gex_cached_flip(
                         "gex_net": gnet,
                         "gex_calls": gc,
                         "gex_puts": gp,
+                        "gex_cumulative": (
+                            df["gex_cumulative"].astype(float).tolist()
+                            if "gex_cumulative" in df.columns
+                            else []
+                        ),
+                        "zero_gamma_curve": [],
                         "meta": _meta,
                     }
+                res = _canonicalize_gex_result(res)
             cache_source = cache_source or "disk"
             try:
                 job_manager.cache_set(key, res)
@@ -1034,88 +1063,16 @@ async def _compute_gex_cached_flip(
                     "scanner:gex_cache_store",
                     {
                         "symbol": symbol,
-                        "label": label or "total",
-                        "expiry": expiry_override or "all",
+                        "label": label or "all",
+                        "expiry": expiry_key or "all",
                         "expiry_mode": expiry_mode,
+                        "remove_0dte": remove_0dte,
                         "parent_job_id": parent_job_id,
                     },
                 )
             except Exception:
                 pass
-    # If cached window is wider than requested, filter to requested window and recompute flips
-    try:
-        meta_pw = res.get("meta", {}).get("pct_window")
-        if meta_pw is not None and float(meta_pw) > float(pct_window) and res.get("strikes"):
-            lo = float(spot) * (1 - pct_window)
-            hi = float(spot) * (1 + pct_window)
-            filt = [(s, i) for i, s in enumerate(res.get("strikes") or []) if lo <= float(s) <= hi]
-            idxs = [i for _, i in filt]
-            if idxs:
-                strikes = [res["strikes"][i] for i in idxs]
-                gnet = [res.get("gex_net", [])[i] for i in idxs]
-                gc = [res.get("gex_calls", [])[i] for i in idxs]
-                gp = [res.get("gex_puts", [])[i] for i in idxs]
-                res = {
-                    "strikes": strikes,
-                    "gex_net": gnet,
-                    "gex_calls": gc,
-                    "gex_puts": gp,
-                    "meta": {**(res.get("meta") or {}), "pct_window": float(pct_window)},
-                }
-                new_flip = recompute_flip_from_arrays(strikes, gnet)
-                if new_flip is not None:
-                    res["meta"]["gex_flip"] = float(new_flip)
-                new_micro = recompute_micro_flip_from_arrays(strikes, gnet, gc, gp)
-                if new_micro is not None:
-                    res["meta"]["gex_flip_micro"] = float(new_micro)
-    except Exception:
-        pass
-    micro_flip = None
-    # Always recompute flips from the returned arrays to keep meta in sync with what the user sees.
-    try:
-        strikes = res.get("strikes") or []
-        gnet = res.get("gex_net") or []
-        recalced_flip = recompute_flip_from_arrays(strikes, gnet)
-        if recalced_flip is not None:
-            if isinstance(res.get("meta"), dict):
-                res["meta"]["gex_flip"] = float(recalced_flip)
-            else:
-                res["meta"] = {"gex_flip": float(recalced_flip)}
-        micro_flip = recompute_micro_flip_from_arrays(
-            strikes,
-            gnet,
-            res.get("gex_calls") or [],
-            res.get("gex_puts") or [],
-        )
-        if micro_flip is not None:
-            if isinstance(res.get("meta"), dict):
-                res["meta"]["gex_flip_micro"] = float(micro_flip)
-            else:
-                res["meta"] = {"gex_flip_micro": float(micro_flip)}
-        # Log if server flip differs from any cached/meta value
-        try:
-            meta_flip = res.get("meta", {}).get("gex_flip")
-            if (
-                meta_flip is not None
-                and recalced_flip is not None
-                and abs(float(meta_flip) - float(recalced_flip)) > 1e-6
-            ):
-                await event_log.add(
-                    "job",
-                    "/api/scanner/gex",
-                    "flip_mismatch",
-                    {
-                        "symbol": symbol,
-                        "expiry": expiry_override or "all",
-                        "server_flip": meta_flip,
-                        "recalc_flip": recalced_flip,
-                        "len": len(strikes),
-                    },
-                )
-        except Exception:
-            pass
-    except Exception:
-        pass
+    res = _canonicalize_gex_result(res)
     try:
         await event_log.add(
             "job",
@@ -1123,9 +1080,10 @@ async def _compute_gex_cached_flip(
             "scanner:gex",
             {
                 "symbol": symbol,
-                "label": label or "total",
-                "expiry": expiry_override or "all",
+                "label": label or "all",
+                "expiry": expiry_key or "all",
                 "expiry_mode": expiry_mode,
+                "remove_0dte": remove_0dte,
                 "cached": bool(cache_source),
                 "cache_source": cache_source,
                 "parent_job_id": parent_job_id,
@@ -1140,80 +1098,63 @@ async def _compute_gex_cached_flip(
             "scanner:gex_done",
             {
                 "symbol": symbol,
-                "label": label or "total",
-                "expiry": expiry_override or "all",
+                "label": label or "all",
+                "expiry": expiry_key or "all",
                 "expiry_mode": expiry_mode,
+                "remove_0dte": remove_0dte,
                 "parent_job_id": parent_job_id,
-                "flip": res.get("meta", {}).get("gex_flip"),
+                "net_gex": res.get("meta", {}).get("net_gex"),
+                "zero_gamma": res.get("meta", {}).get("zero_gamma"),
                 "cache_source": cache_source,
             },
         )
     except Exception:
         pass
-    flip = None
+    zero_gamma = None
     try:
-        flip = res.get("meta", {}).get("gex_flip")
+        zero_gamma = res.get("meta", {}).get("zero_gamma")
     except Exception:
-        flip = None
-    top_strike = None
+        zero_gamma = None
+    net_gex = None
     try:
-        gn = res.get("gex_net") or []
-        st = res.get("strikes") or []
-        if len(gn) == len(st) and len(st):
-            idx = max(range(len(st)), key=lambda i: abs(float(gn[i]) if gn[i] is not None else 0.0))
-            top_strike = st[idx]
+        net_gex = res.get("meta", {}).get("net_gex")
     except Exception:
-        top_strike = None
+        net_gex = None
+    total_gamma_at_spot = None
+    try:
+        total_gamma_at_spot = res.get("meta", {}).get("total_gamma_at_spot")
+    except Exception:
+        total_gamma_at_spot = None
     return {
-        "flip": (float(flip) if flip is not None else None),
-        "flip_micro": (float(micro_flip) if micro_flip is not None else None),
-        "top_strike": (float(top_strike) if top_strike is not None else None),
+        "net_gex": (float(net_gex) if net_gex is not None else None),
+        "total_gamma_at_spot": (
+            float(total_gamma_at_spot) if total_gamma_at_spot is not None else None
+        ),
+        "zero_gamma": (float(zero_gamma) if zero_gamma is not None else None),
+        "gamma_confidence": (
+            ((res.get("meta") or {}).get("zero_gamma_diagnostics") or {}).get("solver_confidence")
+        ),
+        "gamma_regime": (res.get("meta") or {}).get("gamma_regime") or "Gamma Regime Unavailable",
+        "spot_vs_zero_gamma": (res.get("meta") or {}).get("spot_vs_zero_gamma")
+        or spot_vs_zero_gamma_label(spot, zero_gamma),
+        "spot_vs_zero_gamma_pct": spot_vs_zero_gamma_pct(spot, zero_gamma),
+        "zero_gamma_diagnostics": (res.get("meta") or {}).get("zero_gamma_diagnostics") or {},
         "meta": res.get("meta") or {},
         "raw": res,
+        "error": (res.get("meta") or {}).get("error"),
     }
 
-
-def _gex_growth_above_top(raw: dict) -> tuple[Optional[float], Optional[float]]:
-    """
-    Return (top_positive_strike, sum_above_top) from a raw gex payload.
-    Sum uses net gex above the highest positive strike; returns (None, None) if unavailable.
-    """
-    try:
-        strikes = raw.get("strikes") or []
-        gnet = raw.get("gex_net") or []
-        if not strikes or len(strikes) != len(gnet):
-            return None, None
-        vals = []
-        for i in range(len(gnet)):
-            try:
-                v = float(gnet[i] or 0.0)
-                s = float(strikes[i] or 0.0)
-                if not (isfinite(v) and isfinite(s)):
-                    continue
-                vals.append((v, s))
-            except Exception:
-                continue
-        if not vals:
-            return None, None
-        # highest positive call side
-        top_val, top_strike = max(vals, key=lambda t: t[0])
-        if top_val <= 0:
-            return None, None
-        above = 0.0
-        for v, s in vals:
-            if s > top_strike:
-                above += v
-        return top_strike, above
-    except Exception:
-        return None, None
-
-
 async def _scanner_entry(
-    symbol: str, pct_window: float, parent_job_id: Optional[str] = None, demo_mode: bool = False
+    symbol: str,
+    pct_window: float,
+    scope: str,
+    remove_0dte: bool,
+    parent_job_id: Optional[str] = None,
+    demo_mode: bool = False,
 ) -> dict:
     sym = symbol.upper().strip()
     if demo_mode:
-        return demo_scanner_row(sym, pct_window)
+        return demo_scanner_row(sym, pct_window, scope=scope, include_0dte=(not remove_0dte))
     row = {"symbol": sym}
     if not sym:
         row["error"] = "Missing symbol"
@@ -1224,131 +1165,55 @@ async def _scanner_entry(
         row["error"] = "Spot unavailable"
         return row
     expiries = await _list_expiry_dates(sym)
-    weekly, monthly = _pick_weekly_monthly(expiries)
-    row["weekly_expiry"] = weekly
-    row["monthly_expiry"] = monthly
     row["next_expiry"] = expiries[0] if expiries else None
-    configs = [("total", None, "all", False)]
-    if weekly:
-        configs.append(("weekly", weekly, "selected", False))
-    if monthly:
-        configs.append(("monthly", monthly, "selected", False))
-    seen_keys: dict[tuple[str, str], str] = {}
-    deduped = []
-    for lbl, exp, emode, nxt in configs:
-        k = (exp or "all", emode)
-        if k in seen_keys:
-            continue
-        seen_keys[k] = lbl
-        deduped.append((lbl, exp, emode, nxt))
-    res_map: dict[str, dict | None] = {}
-    key_map: dict[tuple[str, str], dict | None] = {}
-    for lbl, exp, emode, nxt in deduped:
-        try:
-            r = await _compute_gex_cached_flip(
-                sym,
-                price["spot"],
-                pct_window,
-                expiry_override=exp,
-                expiry_mode=emode,
-                next_only=nxt,
-                label=lbl,
-                parent_job_id=parent_job_id,
-            )
-        except Exception as e:  # noqa: BLE001
-            r = {"flip": None, "error": str(e)}
-        res_map[lbl] = r
-        key_map[(exp or "all", emode)] = r
-    total = res_map.get("total") or key_map.get(("all", "all")) or {}
-    weekly_res = res_map.get("weekly") or (key_map.get((weekly, "selected")) if weekly else None)
-    monthly_res = res_map.get("monthly") or (
-        key_map.get((monthly, "selected")) if monthly else None
-    )
-    row["flip_weekly"] = weekly_res.get("flip") if isinstance(weekly_res, dict) else None
-    row["flip_monthly"] = monthly_res.get("flip") if isinstance(monthly_res, dict) else None
-    row["flip_total"] = total.get("flip")
-    row["flip_weekly_micro"] = (
-        weekly_res.get("flip_micro") if isinstance(weekly_res, dict) else None
-    )
-    row["flip_monthly_micro"] = (
-        monthly_res.get("flip_micro") if isinstance(monthly_res, dict) else None
-    )
-    row["flip_total_micro"] = total.get("flip_micro")
-    row["top_gex_strike"] = total.get("top_strike") or (
-        weekly_res.get("top_strike") if isinstance(weekly_res, dict) else None
-    )
+    today_iso = datetime.now(timezone.utc).date().isoformat()
+    scope_expiries = scanner_scope_expirations(expiries, scope, today_iso=today_iso)
+    if remove_0dte:
+        scope_expiries = [expiry for expiry in scope_expiries if expiry != today_iso]
+    row["scope"] = scope
+    row["scope_expiry_count"] = len(scope_expiries)
+    if scope != "all" and not scope_expiries:
+        row["net_gex"] = None
+        row["total_gamma_at_spot"] = None
+        row["zero_gamma"] = None
+        row["spot_vs_zero_gamma"] = "No Zero Gamma in tested range"
+        row["spot_vs_zero_gamma_pct"] = None
+        row["gamma_regime"] = "Gamma Regime Unavailable"
+        row["error"] = f"No expirations available in {scope} horizon"
+        return row
     try:
-        row["top_gex_pct"] = _pct_delta(row["top_gex_strike"], price.get("spot"))
-    except Exception:
-        row["top_gex_pct"] = None
-    row["message"] = total.get("meta", {}).get("expiry") if isinstance(total, dict) else ""
-    # OI summary (current snapshot across sampled contracts)
-    oi = None
-    try:
-        oi = total.get("meta", {}).get("total_oi")
-    except Exception:
-        oi = None
-    row["oi_total"] = oi
-    hist = upsert_oi_history(sym, oi, max_days=7)
-    row["oi_trend"] = [h.get("oi") for h in hist if h.get("oi") is not None]
-    row["oi_trend_ts"] = [h.get("ts") for h in hist if h.get("ts") is not None]
-    # GEX trend: sum of net GEX above highest positive strike vs last snapshot
-    row["gex_trend_pct"] = None
-    try:
-        raw = total.get("raw") if isinstance(total, dict) else None
-        _, gex_above = _gex_growth_above_top(raw or {})
-        if gex_above is not None:
-            prev_hist = load_gex_trend_history(sym)
-            prev_val = None
-            if prev_hist:
-                try:
-                    prev_val = float(prev_hist[-1].get("value"))
-                except Exception:
-                    prev_val = None
-            if prev_val is not None:
-                baseline = abs(prev_val)
-                # Avoid blowups when prior snapshot is effectively zero vs current magnitude
-                if baseline >= 1e-6 and baseline >= 1e-4 * max(abs(float(gex_above)), 1e-6):
-                    denom = baseline
-                    row["gex_trend_pct"] = ((float(gex_above) - prev_val) / denom) * 100.0
-                else:
-                    row["gex_trend_pct"] = None
-            upsert_gex_trend_history(sym, gex_above, max_days=7)
-    except Exception:
-        row["gex_trend_pct"] = None
-    # Expected move from near-term expiry (ATM IV proxy)
-    em = await _fetch_expected_move(sym, price.get("spot"), expiries)
-    row["exp_move"] = em.get("exp_move")
-    row["exp_move_pct"] = em.get("exp_move_pct")
-    row["exp_move_expiry"] = em.get("expiry")
-    row["error"] = total.get("error") if isinstance(total, dict) else None
-    # Distances: how far spot is from each flip in %
-    row["distance_weekly_pct"] = _pct_delta(price.get("spot"), row["flip_weekly"])
-    row["distance_monthly_pct"] = _pct_delta(price.get("spot"), row["flip_monthly"])
-    row["distance_total_pct"] = _pct_delta(price.get("spot"), row["flip_total"])
-    row["distance_weekly_micro_pct"] = _pct_delta(price.get("spot"), row["flip_weekly_micro"])
-    row["distance_monthly_micro_pct"] = _pct_delta(price.get("spot"), row["flip_monthly_micro"])
-    row["distance_total_micro_pct"] = _pct_delta(price.get("spot"), row["flip_total_micro"])
-    distances = [
-        abs(x)
-        for x in [
-            row.get("distance_total_pct"),
-            row.get("distance_weekly_pct"),
-            row.get("distance_monthly_pct"),
-        ]
-        if x is not None
-    ]
-    micro_distances = [
-        abs(x)
-        for x in [
-            row.get("distance_total_micro_pct"),
-            row.get("distance_weekly_micro_pct"),
-            row.get("distance_monthly_micro_pct"),
-        ]
-        if x is not None
-    ]
-    row["score"] = max(distances) if distances else None
-    row["score_micro"] = max(micro_distances) if micro_distances else None
+        summary = await _compute_gex_cached_summary(
+            sym,
+            price["spot"],
+            pct_window,
+            expiry_key=",".join(scope_expiries) if scope_expiries else None,
+            expiry_mode="all",
+            next_only=False,
+            remove_0dte=remove_0dte,
+            allowed_expiries=scope_expiries if scope_expiries else expiries,
+            label=scope,
+            parent_job_id=parent_job_id,
+        )
+    except Exception as e:  # noqa: BLE001
+        summary = {
+            "net_gex": None,
+            "total_gamma_at_spot": None,
+            "zero_gamma": None,
+            "spot_vs_zero_gamma": "No Zero Gamma in tested range",
+            "gamma_regime": "Gamma Regime Unavailable",
+            "error": str(e),
+        }
+    row["net_gex"] = summary.get("net_gex")
+    row["total_gamma_at_spot"] = summary.get("total_gamma_at_spot")
+    row["zero_gamma"] = summary.get("zero_gamma")
+    row["gamma_confidence"] = summary.get("gamma_confidence")
+    row["spot_vs_zero_gamma"] = summary.get("spot_vs_zero_gamma")
+    row["spot_vs_zero_gamma_pct"] = summary.get("spot_vs_zero_gamma_pct")
+    row["gamma_regime"] = summary.get("gamma_regime") or "Gamma Regime Unavailable"
+    row["message"] = summary.get("meta", {}).get("expiry") if isinstance(summary, dict) else ""
+    row["error"] = summary.get("error") if isinstance(summary, dict) else None
+    row["include_0dte"] = bool(not remove_0dte)
+    row["remove_0dte"] = bool(remove_0dte)
     return row
 
 
@@ -1359,6 +1224,10 @@ async def api_scanner_scan(request: Request):
         payload = await request.json()
     except Exception:
         payload = {}
+    scope = str(payload.get("scope") or "all").strip().lower()
+    if scope not in {"weekly", "monthly", "all"}:
+        scope = "all"
+    remove_0dte = _payload_remove_0dte(payload, default=False)
     symbols_raw = payload.get("symbols") or []
     try:
         default_pct = float(payload.get("pct_window", 0.10))
@@ -1388,9 +1257,19 @@ async def api_scanner_scan(request: Request):
     except Exception:
         pass
     if demo_mode:
-        rows = [demo_scanner_row(sym, pw) for sym, pw in symbols]
+        rows = [
+            demo_scanner_row(sym, pw, scope=scope, include_0dte=(not remove_0dte))
+            for sym, pw in symbols
+        ]
         return JSONResponse(
-            {"results": rows, "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "demo": True}
+            {
+                "results": rows,
+                "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "demo": True,
+                "scope": scope,
+                "include_0dte": bool(not remove_0dte),
+                "remove_0dte": bool(remove_0dte),
+            }
         )
     if not symbols:
         return JSONResponse({"results": [], "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S")})
@@ -1399,7 +1278,7 @@ async def api_scanner_scan(request: Request):
 
     async def _run(sym: str, pw: float):
         async with sem:
-            return await _scanner_entry(sym, pw, None, demo_mode)
+            return await _scanner_entry(sym, pw, scope, remove_0dte, None, demo_mode)
 
     t0 = time.time()
     rows = await asyncio.gather(*[_run(sym, pw) for sym, pw in symbols])
@@ -1419,6 +1298,9 @@ async def api_scanner_scan(request: Request):
             "results": rows,
             "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "duration_secs": duration,
+            "scope": scope,
+            "include_0dte": bool(not remove_0dte),
+            "remove_0dte": bool(remove_0dte),
         }
     )
 
@@ -1430,6 +1312,10 @@ async def api_scanner_start(request: Request):
         payload = await request.json()
     except Exception:
         payload = {}
+    scope = str(payload.get("scope") or "all").strip().lower()
+    if scope not in {"weekly", "monthly", "all"}:
+        scope = "all"
+    remove_0dte = _payload_remove_0dte(payload, default=False)
     symbols_raw = payload.get("symbols") or []
     try:
         default_pct = float(payload.get("pct_window", 0.10))
@@ -1467,10 +1353,16 @@ async def api_scanner_start(request: Request):
         job.status = "done"
         job.progress = 1.0
         job.result = {
-            "results": [demo_scanner_row(sym, pw) for sym, pw in symbols],
+            "results": [
+                demo_scanner_row(sym, pw, scope=scope, include_0dte=(not remove_0dte))
+                for sym, pw in symbols
+            ],
             "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "duration_secs": 0.0,
             "demo": True,
+            "scope": scope,
+            "include_0dte": bool(not remove_0dte),
+            "remove_0dte": bool(remove_0dte),
         }
         resp = JSONResponse({"ok": True, "job_id": job.job_id, "demo": True})
         if set_cookie:
@@ -1508,7 +1400,9 @@ async def api_scanner_start(request: Request):
 
         async def _run_one(sym: str, pw: float):
             async with sem:
-                return await _scanner_entry(sym, pw, job.job_id, demo_mode)
+                return await _scanner_entry(
+                    sym, pw, scope, remove_0dte, job.job_id, demo_mode
+                )
 
         tasks = [asyncio.create_task(_run_one(sym, pw)) for sym, pw in symbols]
         done_ct = 0
@@ -1574,6 +1468,9 @@ async def api_scanner_start(request: Request):
             "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "duration_secs": time.time() - loop_started,
             "cache_metrics": dict(getattr(job, "cache_metrics", {}) or {}),
+            "scope": scope,
+            "include_0dte": bool(not remove_0dte),
+            "remove_0dte": bool(remove_0dte),
         }
         job.status = "done"
         job.progress = 1.0
@@ -1670,6 +1567,12 @@ async def api_gex_start(request: Request):
         pct_window = 0.10
     expiry_sel = payload.get("expiry") or None
     expiry_mode = (payload.get("expiry_mode") or "selected").strip()
+    remove_0dte = _payload_remove_0dte(payload, default=False)
+    selected_expirations = payload.get("selected_expirations")
+    if not isinstance(selected_expirations, list):
+        selected_expirations = None
+    selected_expirations = [str(exp)[:10] for exp in (selected_expirations or []) if exp]
+    solver_config = _payload_solver_config(payload)
     demo_mode = get_demo_mode(request)
 
     sid = get_session_id(request)
@@ -1684,9 +1587,19 @@ async def api_gex_start(request: Request):
         job = await job_manager.create(sid)
         job.status = "done"
         job.progress = 1.0
-        job.result = demo_gex_result(symbol, pct_window)
+        job.result = _canonicalize_gex_result(
+            demo_gex_result(
+                symbol,
+                pct_window,
+                expiry=expiry_sel,
+                expiry_mode=expiry_mode,
+                include_0dte=(not remove_0dte),
+            )
+        )
         try:
             meta = job.result.get("meta") or {}
+            meta["solver_config"] = dict(solver_config)
+            meta["solver_profile_label"] = gamma_solver_profile_label(solver_config)
             meta["job_id"] = job.job_id
             job.result["meta"] = meta
         except Exception:
@@ -1710,6 +1623,10 @@ async def api_gex_start(request: Request):
         weight="",
         spot_override=(str(spot_override).strip() if spot_override else None),
         expiry_mode=expiry_mode,
+        include_0dte=(not remove_0dte),
+        expiry_filter=",".join(sorted(selected_expirations)),
+        solver_profile=gamma_solver_cache_token(solver_config),
+        calc_version="gamma-v4",
     )
     try:
         await event_log.add(
@@ -1729,24 +1646,7 @@ async def api_gex_start(request: Request):
         job = await job_manager.create(sid)
         job.status = "done"
         job.progress = 1.0
-        res = cached
-        try:
-            meta = res.get("meta") or {}
-            strikes = res.get("strikes") or []
-            gnet = res.get("gex_net") or []
-            gc = res.get("gex_calls") or []
-            gp = res.get("gex_puts") or []
-            if meta.get("gex_flip") is None:
-                macro_flip = recompute_flip_from_arrays(strikes, gnet)
-                if macro_flip is not None:
-                    meta["gex_flip"] = float(macro_flip)
-            if meta.get("gex_flip_micro") is None:
-                micro_flip = recompute_micro_flip_from_arrays(strikes, gnet, gc, gp)
-                if micro_flip is not None:
-                    meta["gex_flip_micro"] = float(micro_flip)
-            res["meta"] = meta
-        except Exception:
-            pass
+        res = _canonicalize_gex_result(cached)
         job.result = res
         job.log(f"Cache hit (server, ttl={ttl}s) for {symbol} — GEX")
         try:
@@ -1790,9 +1690,12 @@ async def api_gex_start(request: Request):
                         "expiry": expiry_sel,
                         "next_only": (False if expiry_sel else next_only),
                         "pct_window": pct_window,
+                        "remove_0dte": remove_0dte,
+                        "selected_expirations": selected_expirations,
+                        "solver_config": solver_config,
                     },
-                    status="info",
-                )
+                status="info",
+            )
             except Exception:
                 pass
             # Resolve spot
@@ -1887,16 +1790,22 @@ async def api_gex_start(request: Request):
                 only_next_expiry=(False if expiry_sel else next_only),
                 expiry_mode=expiry_mode,
                 expiry_override=expiry_sel,
+                include_0dte=(not remove_0dte),
+                remove_0dte=remove_0dte,
+                allowed_expiries=selected_expirations if expiry_mode == "all" else None,
+                include_solver_curve=True,
+                solver_config=solver_config,
             )
             t_compute_end = time.time()
-            # If using 'current' (previously 'selected') mode, prefer explicitly-selected expiry in header
+            # When the page is in current-expiration mode, prefer the explicitly selected expiry in the header.
             if expiry_sel and (expiry_mode in ("selected", "", "current")):
                 meta["expiry"] = expiry_sel
             if job.cancel_event.is_set():
                 job.status = "cancelled"
                 return
             if df is None or df.empty:
-                job.result = {
+                job.result = _canonicalize_gex_result(
+                    {
                     "strikes": [],
                     "gex_net": [],
                     "gex_calls": [],
@@ -1906,15 +1815,36 @@ async def api_gex_start(request: Request):
                         "spot": float(spot),
                         **({"spot_ah": float(spot_ah)} if spot_ah is not None else {}),
                         **({"prev_close": float(prev_close)} if prev_close is not None else {}),
-                        **(
-                            {"gex_flip": float(meta.get("gex_flip"))}
-                            if (meta.get("gex_flip") is not None)
-                            else {}
+                        "net_gex": (
+                            float(meta.get("net_gex")) if meta.get("net_gex") is not None else 0.0
                         ),
+                        "total_gamma_at_spot": (
+                            float(meta.get("total_gamma_at_spot"))
+                            if meta.get("total_gamma_at_spot") is not None
+                            else 0.0
+                        ),
+                        "zero_gamma": (
+                            float(meta.get("zero_gamma"))
+                            if meta.get("zero_gamma") is not None
+                            else None
+                        ),
+                        "spot_vs_zero_gamma": meta.get("spot_vs_zero_gamma")
+                        or "No Zero Gamma in tested range",
+                        "gamma_regime": meta.get("gamma_regime") or "Gamma Regime Unavailable",
+                        "zero_gamma_diagnostics": dict(meta.get("zero_gamma_diagnostics") or {}),
+                        "include_0dte": bool(not remove_0dte),
+                        "remove_0dte": bool(remove_0dte),
+                        "selected_expirations": list(selected_expirations or []),
+                        "solver_config": dict(meta.get("solver_config") or solver_config),
+                        "solver_profile_label": meta.get("solver_profile_label")
+                        or gamma_solver_profile_label(solver_config),
                         "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "symbol": symbol,
+                        "provider_listing": dict(meta.get("provider_listing") or {}),
                     },
-                }
+                    "zero_gamma_curve": list(meta.get("zero_gamma_curve") or []),
+                    }
+                )
                 job.status = "done"
                 job.progress = 1.0
                 return
@@ -1953,8 +1883,27 @@ async def api_gex_start(request: Request):
             _meta = {
                 "expiry": meta.get("expiry"),
                 "spot": float(spot),
+                "net_gex": float(meta.get("net_gex")) if meta.get("net_gex") is not None else float(sum(gnet)),
+                "total_gamma_at_spot": (
+                    float(meta.get("total_gamma_at_spot"))
+                    if meta.get("total_gamma_at_spot") is not None
+                    else float(sum(gnet))
+                ),
+                "zero_gamma": (
+                    float(meta.get("zero_gamma")) if meta.get("zero_gamma") is not None else None
+                ),
+                "spot_vs_zero_gamma": meta.get("spot_vs_zero_gamma") or "No Zero Gamma in tested range",
+                "gamma_regime": meta.get("gamma_regime") or "Gamma Regime Unavailable",
+                "zero_gamma_diagnostics": dict(meta.get("zero_gamma_diagnostics") or {}),
+                "include_0dte": bool(not remove_0dte),
+                "remove_0dte": bool(remove_0dte),
+                "selected_expirations": list(selected_expirations or []),
+                "solver_config": dict(meta.get("solver_config") or solver_config),
+                "solver_profile_label": meta.get("solver_profile_label")
+                or gamma_solver_profile_label(solver_config),
                 "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "symbol": symbol,
+                "provider_listing": dict(meta.get("provider_listing") or {}),
             }
             if spot_ah is not None:
                 _meta["spot_ah"] = float(spot_ah)
@@ -1964,11 +1913,6 @@ async def api_gex_start(request: Request):
                 _meta["rth_close"] = float(rth_close)
             if prev_close_yest is not None:
                 _meta["prev_close_yest"] = float(prev_close_yest)
-            try:
-                if meta.get("gex_flip") is not None:
-                    _meta["gex_flip"] = float(meta.get("gex_flip"))
-            except Exception:
-                pass
             try:
                 _meta["timings"] = {
                     "price_sec": round(max(0.0, t_price_end - t_price_start), 3),
@@ -1980,23 +1924,21 @@ async def api_gex_start(request: Request):
                 )
             except Exception:
                 pass
-            try:
-                if _meta.get("gex_flip") is None:
-                    macro_flip = recompute_flip_from_arrays(strikes, gnet)
-                    if macro_flip is not None:
-                        _meta["gex_flip"] = float(macro_flip)
-                micro_flip = recompute_micro_flip_from_arrays(strikes, gnet, gc, gp)
-                if micro_flip is not None:
-                    _meta["gex_flip_micro"] = float(micro_flip)
-            except Exception:
-                pass
-            job.result = {
+            job.result = _canonicalize_gex_result(
+                {
                 "strikes": strikes,
                 "gex_net": gnet,
                 "gex_calls": gc,
                 "gex_puts": gp,
+                "gex_cumulative": (
+                    df["gex_cumulative"].astype(float).tolist()
+                    if "gex_cumulative" in df.columns
+                    else []
+                ),
+                "zero_gamma_curve": list(meta.get("zero_gamma_curve") or []),
                 "meta": _meta,
-            }
+                }
+            )
             job.status = "done"
             job.progress = 1.0
             try:
@@ -2051,6 +1993,105 @@ async def api_gex_start(request: Request):
     return resp
 
 
+@router.post("/api/gex/solver-preview")
+async def api_gex_solver_preview(request: Request):
+    payload = await request.json()
+    symbol = (payload.get("symbol") or "").upper().strip()
+    if not symbol:
+        raise HTTPException(400, detail="Missing symbol")
+    spot_override = payload.get("spot_override")
+    try:
+        pct_window = float(payload.get("pct_window", 0.10))
+    except Exception:
+        pct_window = 0.10
+    expiry_sel = payload.get("expiry") or None
+    expiry_mode = (payload.get("expiry_mode") or "selected").strip()
+    remove_0dte = _payload_remove_0dte(payload, default=False)
+    selected_expirations = payload.get("selected_expirations")
+    if not isinstance(selected_expirations, list):
+        selected_expirations = None
+    selected_expirations = [str(exp)[:10] for exp in (selected_expirations or []) if exp]
+    solver_config = _payload_solver_config(payload)
+    ttl = int(os.getenv("SERVER_CACHE_TTL_SEC", "300"))
+    key = cache_key(
+        mode="g",
+        symbol=symbol,
+        pct_window=pct_window,
+        next_only=False,
+        expiry=expiry_sel,
+        weight="",
+        spot_override=(str(spot_override).strip() if spot_override else None),
+        expiry_mode=expiry_mode,
+        include_0dte=(not remove_0dte),
+        expiry_filter=",".join(sorted(selected_expirations)),
+        solver_profile=gamma_solver_cache_token(solver_config),
+        calc_version="gamma-v4",
+    )
+    cached = job_manager.cache_get(key, ttl) or disk_cache_get(key, ttl)
+    if cached is not None:
+        result = _canonicalize_gex_result(cached)
+        meta = result.get("meta") or {}
+        diagnostics = dict(meta.get("zero_gamma_diagnostics") or {})
+        return JSONResponse(
+            {
+                "source": "cache",
+                "net_gex": meta.get("net_gex"),
+                "zero_gamma": meta.get("zero_gamma"),
+                "total_gamma_at_spot": meta.get("total_gamma_at_spot"),
+                "gamma_regime": meta.get("gamma_regime"),
+                "gamma_confidence": diagnostics.get("solver_confidence"),
+                "solver_profile_label": meta.get("solver_profile_label")
+                or gamma_solver_profile_label(solver_config),
+                "solver_config": dict(meta.get("solver_config") or solver_config),
+                "diagnostics": diagnostics,
+            }
+        )
+
+    spot = None
+    if spot_override:
+        try:
+            spot = float(str(spot_override).replace(",", "").strip())
+        except Exception:
+            spot = None
+    if spot is None:
+        async with httpx.AsyncClient() as client:
+            spot = fetch_spot_yahoo(symbol)
+            if spot is None:
+                spot = await fetch_spot_polygon(client, symbol)
+    if spot is None:
+        raise HTTPException(400, detail="Spot unavailable")
+    job = Job(job_id="gex-preview", session_id="preview")
+    _df, meta = await compute_gex_for_ticker(
+        job,
+        symbol,
+        float(spot),
+        pct_window=pct_window,
+        only_next_expiry=(False if expiry_sel else False),
+        expiry_mode=expiry_mode,
+        expiry_override=expiry_sel,
+        include_0dte=(not remove_0dte),
+        remove_0dte=remove_0dte,
+        allowed_expiries=selected_expirations if expiry_mode == "all" else None,
+        include_solver_curve=False,
+        solver_config=solver_config,
+    )
+    diagnostics = dict(meta.get("zero_gamma_diagnostics") or {})
+    return JSONResponse(
+        {
+            "source": "live",
+            "net_gex": meta.get("net_gex"),
+            "zero_gamma": meta.get("zero_gamma"),
+            "total_gamma_at_spot": meta.get("total_gamma_at_spot"),
+            "gamma_regime": meta.get("gamma_regime"),
+            "gamma_confidence": diagnostics.get("solver_confidence"),
+            "solver_profile_label": meta.get("solver_profile_label")
+            or gamma_solver_profile_label(solver_config),
+            "solver_config": dict(meta.get("solver_config") or solver_config),
+            "diagnostics": diagnostics,
+        }
+    )
+
+
 @router.get("/api/gex/status")
 async def api_gex_status(job_id: str):
     job = await job_manager.get(job_id)
@@ -2079,17 +2120,8 @@ async def api_gex_result(job_id: str):
     if not job:
         raise HTTPException(404, detail="Unknown job")
     if getattr(job, "result", None) is None:
-        # Safety: if job finished but result wasn't attached, don't 204-loop
-        if getattr(job, "status", None) == "done":
-            return JSONResponse(
-                {
-                    "strikes": [],
-                    "gex_net": [],
-                    "gex_calls": [],
-                    "gex_puts": [],
-                    "meta": {},
-                }
-            )
+        # If the job has flipped to done but the result payload has not been
+        # attached yet, keep the client polling instead of rendering a blank chart.
         return JSONResponse(
             {
                 "status": "pending",
@@ -2099,6 +2131,56 @@ async def api_gex_result(job_id: str):
             }
         )
     return JSONResponse(job.result)
+
+
+@router.get("/api/gex/zero-gamma-curve")
+async def api_gex_zero_gamma_curve(job_id: str):
+    job = await job_manager.get(job_id)
+    if not job or not getattr(job, "result", None):
+        raise HTTPException(404, detail="No result for job")
+    result = job.result or {}
+    meta = result.get("meta") or {}
+    diagnostics = meta.get("zero_gamma_diagnostics") or {}
+    curve = result.get("zero_gamma_curve") or diagnostics.get("curve") or []
+    return JSONResponse(
+        {
+            "job_id": job_id,
+            "symbol": meta.get("symbol"),
+            "expiry": meta.get("expiry"),
+            "spot": meta.get("spot"),
+            "zero_gamma": meta.get("zero_gamma"),
+            "total_gamma_at_spot": meta.get("total_gamma_at_spot"),
+            "gamma_regime": meta.get("gamma_regime"),
+            "solver_spot_min": diagnostics.get("solver_spot_min"),
+            "solver_spot_max": diagnostics.get("solver_spot_max"),
+            "first_sign_change_interval": diagnostics.get("first_sign_change_interval"),
+            "sign_change_intervals": diagnostics.get("sign_change_intervals") or [],
+            "available_expirations": diagnostics.get("available_expirations") or [],
+            "included_expirations": diagnostics.get("included_expirations") or [],
+            "excluded_expirations": diagnostics.get("excluded_expirations") or [],
+            "excluded_expiration_reasons": diagnostics.get("excluded_expiration_reasons") or {},
+            "selected_scope": diagnostics.get("selected_scope") or meta.get("expiry_mode"),
+            "selected_expiry": diagnostics.get("selected_expiry"),
+            "selected_expiration_set": diagnostics.get("selected_expiration_set") or [],
+            "remove_0dte": diagnostics.get("remove_0dte", meta.get("remove_0dte")),
+            "included_row_count": diagnostics.get("included_row_count"),
+            "dropped_row_count": diagnostics.get("dropped_row_count"),
+            "dropped_rows_by_reason": diagnostics.get("dropped_rows_by_reason") or {},
+            "included_contract_sample": diagnostics.get("included_contract_sample") or [],
+            "total_contracts_fetched": diagnostics.get("total_contracts_fetched"),
+            "total_expirations_fetched": diagnostics.get("total_expirations_fetched"),
+            "pagination_completed": diagnostics.get("pagination_completed"),
+            "provider_page_count": diagnostics.get("provider_page_count"),
+            "provider_truncation": diagnostics.get("provider_truncation"),
+            "fetch_path": diagnostics.get("fetch_path"),
+            "selected_expiry_resolution_mode": diagnostics.get("selected_expiry_resolution_mode"),
+            "listing_truncated": diagnostics.get("listing_truncated"),
+            "selected_expiry_guaranteed": diagnostics.get("selected_expiry_guaranteed"),
+            "fallback_used": diagnostics.get("fallback_used"),
+            "diagnostics": diagnostics,
+            "curve": curve,
+        }
+    )
 
 
 @router.post("/api/gex/stop")

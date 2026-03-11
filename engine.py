@@ -12,6 +12,9 @@ import httpx
 import numpy as np
 import pandas as pd
 
+from core.cache import cache_key, disk_cache_get, disk_cache_set
+from core.gamma_math import build_gamma_profile, infer_implied_volatility_from_price
+
 # ------------------------------
 # Config
 # ------------------------------
@@ -20,6 +23,7 @@ MASSIVE_API_KEY = os.getenv("MASSIVE_API_KEY") or os.getenv("POLYGON_API_KEY", "
 MASSIVE_API_BASE = os.getenv("MASSIVE_API_BASE", "https://api.polygon.io")
 CONTRACT_MULTIPLIER = 100
 ALLOW_UNWEIGHTED_FALLBACK = os.getenv("ALLOW_UNWEIGHTED_FALLBACK", "0") == "1"
+GAMMA_CHAIN_CACHE_VERSION = "gamma-chain-v1"
 
 
 # ------------------------------
@@ -273,6 +277,150 @@ async def polygon_get(client: httpx.AsyncClient, path: str, params: dict) -> dic
         return {"status": "error", "message": str(e)}
 
 
+def _extract_next_cursor(payload: dict | None) -> str | None:
+    data = payload or {}
+    next_cursor = data.get("next_url_cursor") or data.get("nextCursor")
+    if next_cursor:
+        return str(next_cursor)
+    next_url = data.get("next_url")
+    if not isinstance(next_url, str) or not next_url:
+        return None
+    try:
+        from urllib.parse import parse_qs, urlparse
+
+        values = parse_qs(urlparse(next_url).query).get("cursor") or []
+        return str(values[0]) if values else None
+    except Exception:
+        return None
+
+
+def _aggregate_gamma_chain_cache_key(symbol: str, spot: float | None = None) -> str:
+    spot_key = None
+    if spot is not None:
+        try:
+            spot_key = f"{float(spot):.2f}"
+        except Exception:
+            spot_key = str(spot)
+    return cache_key(
+        mode="gchain",
+        symbol=symbol,
+        pct_window=0.0,
+        next_only=False,
+        expiry="all",
+        weight="",
+        spot_override=spot_key,
+        expiry_mode="all",
+        include_0dte=True,
+        expiry_filter="",
+        calc_version=GAMMA_CHAIN_CACHE_VERSION,
+    )
+
+
+def _coalesce_numeric(snapshot: dict, paths: list[str]) -> float | None:
+    for path in paths:
+        cur: Any = snapshot
+        try:
+            for key in path.split("."):
+                if isinstance(cur, dict) and key in cur:
+                    cur = cur[key]
+                else:
+                    cur = None
+                    break
+            if cur is None:
+                continue
+            return float(cur)
+        except Exception:
+            continue
+    return None
+
+
+def _normalize_snapshot_chain_row(
+    snapshot: dict[str, Any],
+    *,
+    fallback_contract: dict[str, Any] | None = None,
+    spot: float | None = None,
+) -> dict[str, Any] | None:
+    if not isinstance(snapshot, dict):
+        return None
+    fallback = fallback_contract or {}
+    details = snapshot.get("details") if isinstance(snapshot.get("details"), dict) else {}
+    ticker = (
+        snapshot.get("ticker")
+        or details.get("ticker")
+        or fallback.get("ticker")
+        or fallback.get("symbol")
+        or fallback.get("option_ticker")
+    )
+    strike = (
+        _coalesce_numeric(snapshot, ["details.strike_price", "strike_price", "strike"])
+        or _coalesce_numeric(fallback, ["strike_price", "strikePrice", "strike"])
+    )
+    expiry = (
+        details.get("expiration_date")
+        or snapshot.get("expiration_date")
+        or snapshot.get("expirationDate")
+        or fallback.get("expiration_date")
+        or fallback.get("expirationDate")
+        or fallback.get("exp_date")
+    )
+    option_type = (
+        details.get("contract_type")
+        or snapshot.get("contract_type")
+        or snapshot.get("type")
+        or fallback.get("contract_type")
+        or fallback.get("type")
+    )
+    oi = _coalesce_numeric(snapshot, ["open_interest", "openInterest"]) or 0.0
+    iv = _coalesce_numeric(
+        snapshot,
+        ["implied_volatility", "impliedVolatility", "greeks.iv", "greeks.implied_volatility"],
+    )
+    seconds_to_expiration = _coalesce_numeric(
+        snapshot,
+        ["timeframe.seconds_to_expiration", "seconds_to_expiration", "secondsToExpiration"],
+    )
+    t_years = None
+    if seconds_to_expiration is not None and seconds_to_expiration > 0:
+        t_years = float(seconds_to_expiration) / (365.0 * 24.0 * 3600.0)
+    if t_years is None and expiry:
+        try:
+            from datetime import datetime, timezone
+
+            dt = datetime.fromisoformat(str(expiry)[:10]).replace(tzinfo=timezone.utc)
+            t_years = max((dt.timestamp() - time.time()) / (365.0 * 24.0 * 3600.0), 1.0 / 365.0)
+        except Exception:
+            t_years = None
+    if (iv is None or iv <= 0) and spot is not None and t_years is not None and t_years > 0:
+        option_price = _coalesce_numeric(
+            snapshot,
+            ["day.close", "last_trade.price", "last_quote.midpoint"],
+        )
+        if option_price is not None and option_price > 0:
+            inferred_iv = infer_implied_volatility_from_price(
+                option_price,
+                float(spot),
+                float(strike),
+                float(t_years),
+                str(option_type),
+            )
+            if inferred_iv is not None and inferred_iv > 0:
+                iv = inferred_iv
+    if iv is None:
+        iv = 0.0
+    if not ticker or strike is None or not expiry or not option_type:
+        return None
+    return {
+        "ticker": ticker,
+        "strike": float(strike),
+        "option_type": option_type,
+        "oi": float(oi or 0.0),
+        "iv": float(iv or 0.0),
+        "expiry": str(expiry)[:10],
+        "t_years": float(t_years) if t_years is not None else None,
+        "contract_size": CONTRACT_MULTIPLIER,
+    }
+
+
 async def fetch_spot(client: httpx.AsyncClient, symbol: str) -> Optional[float]:
     try:
         data = await polygon_get(
@@ -375,8 +523,13 @@ def fetch_spot_yahoo(symbol: str) -> Optional[float]:
 
 
 async def list_option_contracts(
-    client: httpx.AsyncClient, underlying: str, limit: int = 2000
-) -> List[dict]:
+    client: httpx.AsyncClient,
+    underlying: str,
+    limit: int | None = 2000,
+    *,
+    return_diagnostics: bool = False,
+    max_pages: int = 100,
+) -> List[dict] | tuple[List[dict], dict]:
     """Iterate Massive (Polygon) option contracts with robust cursor handling.
 
     Polygon may return either `next_url_cursor` (preferred), `nextCursor`, or
@@ -388,17 +541,22 @@ async def list_option_contracts(
     """
     out: List[dict] = []
     cursor: Optional[str] = None
-    tries = 0
+    page_count = 0
+    pagination_completed = True
+    provider_truncation = False
     from datetime import datetime, timezone
 
     today = datetime.now(timezone.utc).date().isoformat()
     while True:
-        if tries > 50:
+        if page_count >= max(max_pages, 1):
+            pagination_completed = False
+            provider_truncation = True
             break
+        page_count += 1
         params = {
             "underlying_ticker": underlying.upper(),
             "active": "true",
-            "limit": min(limit, 1000),
+            "limit": min(limit, 1000) if limit else 1000,
             "sort": "expiration_date",
             "order": "asc",
             "expiration_date.gte": today,
@@ -408,28 +566,270 @@ async def list_option_contracts(
         data = await polygon_get(client, "/v3/reference/options/contracts", params)
         out.extend(data.get("results") or [])
 
-        # Prefer explicit cursor fields when available
-        next_cursor = data.get("next_url_cursor") or data.get("nextCursor")
-
-        # Fallback: extract cursor from full next_url
-        if not next_cursor:
-            nu = data.get("next_url")
-            if isinstance(nu, str) and nu:
-                try:
-                    from urllib.parse import parse_qs, urlparse
-
-                    qs = parse_qs(urlparse(nu).query)
-                    cvals = qs.get("cursor") or []
-                    if cvals:
-                        next_cursor = cvals[0]
-                except Exception:
-                    next_cursor = None
-
-        cursor = next_cursor
-        if not cursor or len(out) >= limit:
+        cursor = _extract_next_cursor(data)
+        if limit and len(out) >= limit:
+            out = out[:limit]
+            provider_truncation = True
             break
-        tries += 1
+        if not cursor:
+            break
+    diagnostics = {
+        "underlying": underlying.upper(),
+        "total_contracts_fetched": len(out),
+        "total_expirations_fetched": len(
+            {
+                str(
+                    c.get("expiration_date")
+                    or c.get("expirationDate")
+                    or c.get("exp_date")
+                    or ""
+                )[:10]
+                for c in out
+                if c.get("expiration_date") or c.get("expirationDate") or c.get("exp_date")
+            }
+        ),
+        "pagination_completed": pagination_completed,
+        "provider_page_count": page_count,
+        "provider_truncation": provider_truncation,
+        "limit_applied": limit,
+    }
+    if return_diagnostics:
+        return out, diagnostics
     return out
+
+
+async def list_option_snapshots(
+    client: httpx.AsyncClient,
+    underlying: str,
+    *,
+    expiry: str | None = None,
+    limit: int = 250,
+    max_pages: int = 25,
+    return_diagnostics: bool = False,
+) -> list[dict] | tuple[list[dict], dict]:
+    out: list[dict] = []
+    cursor: str | None = None
+    page_count = 0
+    pagination_completed = True
+    provider_truncation = False
+    while True:
+        if page_count >= max(max_pages, 1):
+            pagination_completed = False
+            provider_truncation = True
+            break
+        page_count += 1
+        params = {
+            "limit": max(1, min(int(limit), 250)),
+            "sort": "ticker",
+            "order": "asc",
+        }
+        if expiry:
+            params["expiration_date"] = str(expiry)[:10]
+        if cursor:
+            params["cursor"] = cursor
+        data = await polygon_get(client, f"/v3/snapshot/options/{underlying.upper()}", params)
+        results = []
+        if isinstance(data, dict):
+            raw_results = data.get("results") or data.get("result") or []
+            if isinstance(raw_results, list):
+                results = [row for row in raw_results if isinstance(row, dict)]
+            elif isinstance(raw_results, dict):
+                results = [raw_results]
+            if data.get("status") == "error":
+                pagination_completed = False
+                provider_truncation = True
+        out.extend(results)
+        cursor = _extract_next_cursor(data if isinstance(data, dict) else {})
+        if not cursor:
+            break
+    diagnostics = {
+        "underlying": underlying.upper(),
+        "expiry": (str(expiry)[:10] if expiry else None),
+        "total_snapshot_rows": len(out),
+        "provider_page_count": page_count,
+        "pagination_completed": pagination_completed,
+        "provider_truncation": provider_truncation,
+    }
+    if return_diagnostics:
+        return out, diagnostics
+    return out
+
+
+async def fetch_aggregate_gamma_chain(
+    client: httpx.AsyncClient,
+    symbol: str,
+    *,
+    spot: float | None,
+    underlyings: list[str],
+    contracts_by_underlying: dict[str, list[dict]],
+    provider_listing: dict[str, Any],
+    max_pages_per_expiry: int = 25,
+    page_limit: int = 250,
+) -> tuple[list[dict], dict[str, Any]]:
+    listing_lookup: dict[str, dict[str, Any]] = {}
+    expiries_by_underlying: dict[str, list[str]] = {}
+    for underlying, contracts in contracts_by_underlying.items():
+        expiries: set[str] = set()
+        for contract in contracts:
+            ticker = (
+                contract.get("ticker")
+                or contract.get("symbol")
+                or contract.get("option_ticker")
+            )
+            if ticker:
+                listing_lookup[str(ticker)] = contract
+            expiry = (
+                contract.get("expiration_date")
+                or contract.get("expirationDate")
+                or contract.get("exp_date")
+            )
+            if expiry:
+                expiries.add(str(expiry)[:10])
+        expiries_by_underlying[underlying] = sorted(expiries)
+    semaphore = asyncio.Semaphore(
+        max(int(os.getenv("POLYGON_EXPIRY_SNAPSHOT_CONCURRENCY", "4")), 1)
+    )
+
+    async def _fetch_one(underlying: str, expiry: str) -> tuple[list[dict], dict[str, Any]]:
+        async with semaphore:
+            return await list_option_snapshots(
+                client,
+                underlying,
+                expiry=expiry,
+                limit=page_limit,
+                max_pages=max_pages_per_expiry,
+                return_diagnostics=True,
+            )
+
+    tasks = [
+        asyncio.create_task(_fetch_one(underlying, expiry))
+        for underlying in underlyings
+        for expiry in expiries_by_underlying.get(underlying, [])
+    ]
+    chain_rows: list[dict] = []
+    snapshot_details: list[dict[str, Any]] = []
+    seen_tickers: set[str] = set()
+    for task in tasks:
+        results, diagnostics = await task
+        snapshot_details.append(diagnostics)
+        for snapshot in results:
+            ticker = (
+                snapshot.get("ticker")
+                or (snapshot.get("details") or {}).get("ticker")
+            )
+            if ticker and ticker in seen_tickers:
+                continue
+            row = _normalize_snapshot_chain_row(
+                snapshot,
+                spot=spot,
+                fallback_contract=listing_lookup.get(str(ticker)) if ticker else None,
+            )
+            if row is None:
+                continue
+            seen_tickers.add(str(row.get("ticker")))
+            chain_rows.append(row)
+    snapshot_fetch = {
+        "fetched_underlyings": list(underlyings),
+        "available_expirations": sorted(
+            {
+                expiry
+                for expiries in expiries_by_underlying.values()
+                for expiry in expiries
+            }
+        ),
+        "total_snapshot_rows": len(chain_rows),
+        "provider_page_count": sum(
+            int(detail.get("provider_page_count", 0) or 0) for detail in snapshot_details
+        ),
+        "pagination_completed": all(
+            detail.get("pagination_completed", True) for detail in snapshot_details
+        ),
+        "provider_truncation": any(
+            detail.get("provider_truncation", False) for detail in snapshot_details
+        ),
+        "details": snapshot_details,
+        "provider_listing": dict(provider_listing or {}),
+    }
+    return chain_rows, snapshot_fetch
+
+
+async def fetch_direct_expiry_gamma_chain(
+    client: httpx.AsyncClient,
+    *,
+    spot: float | None,
+    underlyings: list[str],
+    expiries: list[str],
+    provider_listing: dict[str, Any] | None = None,
+    max_pages_per_expiry: int = 25,
+    page_limit: int = 250,
+) -> tuple[list[dict], dict[str, Any]]:
+    target_expiries = sorted({str(expiry)[:10] for expiry in (expiries or []) if expiry})
+    semaphore = asyncio.Semaphore(
+        max(int(os.getenv("POLYGON_EXPIRY_SNAPSHOT_CONCURRENCY", "4")), 1)
+    )
+
+    async def _fetch_one(underlying: str, expiry: str) -> tuple[list[dict], dict[str, Any]]:
+        async with semaphore:
+            return await list_option_snapshots(
+                client,
+                underlying,
+                expiry=expiry,
+                limit=page_limit,
+                max_pages=max_pages_per_expiry,
+                return_diagnostics=True,
+            )
+
+    tasks = [
+        asyncio.create_task(_fetch_one(underlying, expiry))
+        for underlying in underlyings
+        for expiry in target_expiries
+    ]
+    chain_rows: list[dict] = []
+    snapshot_details: list[dict[str, Any]] = []
+    seen_tickers: set[str] = set()
+    for task in tasks:
+        results, diagnostics = await task
+        snapshot_details.append(diagnostics)
+        for snapshot in results:
+            ticker = snapshot.get("ticker") or (snapshot.get("details") or {}).get("ticker")
+            if ticker and ticker in seen_tickers:
+                continue
+            row = _normalize_snapshot_chain_row(
+                snapshot,
+                spot=spot,
+                fallback_contract=None,
+            )
+            if row is None:
+                continue
+            seen_tickers.add(str(row.get("ticker")))
+            chain_rows.append(row)
+    pagination_completed = all(
+        detail.get("pagination_completed", True) for detail in snapshot_details
+    )
+    provider_truncation = any(
+        detail.get("provider_truncation", False) for detail in snapshot_details
+    )
+    snapshot_fetch = {
+        "fetch_path": "direct_expiry_snapshot",
+        "fetched_underlyings": list(underlyings),
+        "requested_expirations": target_expiries,
+        "available_expirations": target_expiries,
+        "selected_expiry_resolution_mode": "direct_snapshot",
+        "selected_expiry_guaranteed": bool(target_expiries) and pagination_completed and not provider_truncation,
+        "fallback_used": False,
+        "listing_truncated": bool((provider_listing or {}).get("provider_truncation")),
+        "total_contracts_fetched": int((provider_listing or {}).get("total_contracts_fetched") or 0),
+        "total_expirations_fetched": int((provider_listing or {}).get("total_expirations_fetched") or 0),
+        "total_snapshot_rows": len(chain_rows),
+        "provider_page_count": sum(
+            int(detail.get("provider_page_count", 0) or 0) for detail in snapshot_details
+        ),
+        "pagination_completed": pagination_completed,
+        "provider_truncation": provider_truncation,
+        "details": snapshot_details,
+        "provider_listing": dict(provider_listing or {}),
+    }
+    return chain_rows, snapshot_fetch
 
 
 async def snapshot_option(client: httpx.AsyncClient, option_ticker: str) -> dict:
@@ -955,303 +1355,599 @@ async def compute_gex_for_ticker(
     only_next_expiry: bool = True,
     expiry_mode: str = "",
     expiry_override: str | None = None,
+    include_0dte: bool = True,
+    remove_0dte: bool | None = None,
+    allowed_expiries: list[str] | None = None,
+    include_solver_curve: bool = False,
+    solver_config: dict[str, Any] | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Compute Net GEX by strike using Massive (Polygon) snapshots.
 
-    GEX per contract ≈ gamma * weight * CONTRACT_MULTIPLIER * S^2,
-    with weight = open interest (contracts). Calls contribute +, puts -.
+    Static strike-space gamma and raw signed gamma use:
+    gamma * open_interest * CONTRACT_MULTIPLIER * S^2
+
+    Headline Net GEX is exposed separately using a spot-scaled convention:
+    gamma * open_interest * CONTRACT_MULTIPLIER * S
+
+    Calls contribute +, puts -.
     """
     job.status = "running"
     job.progress = 0.03
+    remove_0dte_flag = bool(remove_0dte) if remove_0dte is not None else (not include_0dte)
     job.log(
-        f"Compute GEX {symbol} spot={spot:.2f} ±{pct_window*100:.2f}% window; next_expiry={only_next_expiry}; emode={(expiry_mode or 'selected')}"
+        f"Compute GEX {symbol} spot={spot:.2f} ±{pct_window*100:.2f}% chart window; "
+        f"next_expiry={only_next_expiry}; emode={(expiry_mode or 'selected')}; "
+        f"remove_0dte={remove_0dte_flag}"
     )
 
     lo, hi = spot * (1 - pct_window), spot * (1 + pct_window)
+    fmode = (expiry_mode or "").strip().lower()
+    requested_expiry_keys = {
+        exp[:10] if isinstance(exp, str) else exp for exp in (allowed_expiries or []) if exp
+    }
+    selected_expiration_set = sorted(requested_expiry_keys) if requested_expiry_keys else None
+    try:
+        from datetime import datetime, timezone
+
+        today_iso = datetime.now(timezone.utc).date().isoformat()
+    except Exception:
+        today_iso = ""
     async with httpx.AsyncClient() as client:
         sym = symbol.upper()
         underlyings = [sym, f"I:{sym}"]
         if not sym.endswith("W"):
             underlyings.append(sym + "W")
-        contracts = []
-        for u in underlyings:
-            try:
-                cs = await list_option_contracts(client, u, limit=2000)
-                if cs:
-                    contracts.extend(cs)
-                    job.log(f"Fetched {len(cs)} contracts for {u}")
-            except Exception as e:
-                job.log(f"WARN: list contracts {u}: {e}")
-        job.log(f"Total merged contracts: {len(contracts)}")
+        provider_listing: dict[str, Any] = {
+            "total_contracts_fetched": 0,
+            "total_expirations_fetched": 0,
+            "pagination_completed": True,
+            "provider_page_count": 0,
+            "provider_truncation": False,
+            "details": [],
+            "aggregate_chain_cache_source": None,
+            "fetch_path": "unresolved",
+            "selected_expiry_resolution_mode": (
+                "not_applicable" if fmode == "all" else "not_resolved"
+            ),
+            "listing_truncated": False,
+            "selected_expiry_guaranteed": False,
+            "fallback_used": False,
+        }
+        contracts: list[dict] = []
+        chain_rows: list[dict] = []
+        contracts_by_underlying: dict[str, list[dict]] = {}
+        aggregate_chain_cache_source: str | None = None
+        expiry_override_key = expiry_override[:10] if isinstance(expiry_override, str) else expiry_override
+        next_expiry_key = expiry_override
+        direct_target_expiries: set[str] = set()
+        if fmode != "all":
+            if fmode == "zero_dte" and today_iso:
+                direct_target_expiries.add(today_iso)
+            elif expiry_override_key:
+                direct_target_expiries.add(str(expiry_override_key)[:10])
+
+        if fmode == "all":
+            chain_cache_key = _aggregate_gamma_chain_cache_key(sym, spot)
+            chain_ttl = int(os.getenv("GAMMA_CHAIN_CACHE_TTL_SEC", "300"))
+            cached_chain = job_manager.cache_get(chain_cache_key, chain_ttl)
+            if cached_chain is not None:
+                aggregate_chain_cache_source = "memory"
+            else:
+                cached_chain = disk_cache_get(chain_cache_key, chain_ttl)
+                if cached_chain is not None:
+                    aggregate_chain_cache_source = "disk"
+                    try:
+                        job_manager.cache_set(chain_cache_key, cached_chain)
+                    except Exception:
+                        pass
+            if isinstance(cached_chain, dict):
+                contracts = list(cached_chain.get("contracts") or [])
+                chain_rows = list(cached_chain.get("chain_rows") or [])
+                contracts_by_underlying = {
+                    str(k): list(v)
+                    for k, v in dict(cached_chain.get("contracts_by_underlying") or {}).items()
+                }
+                provider_listing = dict(cached_chain.get("provider_listing") or {})
+                provider_listing["aggregate_chain_cache_source"] = aggregate_chain_cache_source
+                job.log(
+                    f"Aggregate gamma chain cache hit ({aggregate_chain_cache_source}) "
+                    f"with {len(chain_rows)} normalized rows"
+                )
+
+        if fmode != "all" and direct_target_expiries:
+            direct_expiries = sorted(direct_target_expiries)
+            snapshot_fetch: dict[str, Any] = {}
+            chain_rows, snapshot_fetch = await fetch_direct_expiry_gamma_chain(
+                client,
+                spot=spot,
+                underlyings=underlyings,
+                expiries=direct_expiries,
+                provider_listing=provider_listing,
+                max_pages_per_expiry=int(
+                    os.getenv("POLYGON_SNAPSHOT_MAX_PAGES_PER_EXPIRY", "25")
+                ),
+                page_limit=int(os.getenv("POLYGON_SNAPSHOT_PAGE_LIMIT", "250")),
+            )
+            provider_listing.update(
+                {
+                    "fetch_path": "direct_expiry_snapshot",
+                    "selected_expiry_resolution_mode": "direct_snapshot",
+                    "selected_expiry_guaranteed": bool(
+                        snapshot_fetch.get("selected_expiry_guaranteed")
+                    ),
+                    "fallback_used": False,
+                    "provider_page_count": int(snapshot_fetch.get("provider_page_count", 0) or 0),
+                    "pagination_completed": bool(
+                        snapshot_fetch.get("pagination_completed", True)
+                    ),
+                    "provider_truncation": bool(
+                        snapshot_fetch.get("provider_truncation", False)
+                    ),
+                    "listing_truncated": bool(provider_listing.get("provider_truncation")),
+                    "snapshot_fetch": snapshot_fetch,
+                }
+            )
+            if next_expiry_key is None and len(direct_expiries) == 1:
+                next_expiry_key = direct_expiries[0]
+            job.log(
+                "Direct selected-expiry snapshot fetch "
+                f"for {','.join(direct_expiries)} returned {len(chain_rows)} normalized rows"
+                + (
+                    ""
+                    if provider_listing.get("selected_expiry_guaranteed")
+                    else " (coverage not guaranteed)"
+                )
+            )
+
+        # If direct selected-expiry snapshots return no usable rows, fall back to
+        # listing-based resolution instead of silently returning an empty chain.
+        if not contracts and not chain_rows:
+            provider_listing_details: list[dict] = []
+            for underlying in underlyings:
+                try:
+                    listing_limit = None if fmode == "all" else 2000
+                    contract_rows, listing_diag = await list_option_contracts(
+                        client,
+                        underlying,
+                        limit=listing_limit,
+                        return_diagnostics=True,
+                    )
+                    contracts_by_underlying[underlying] = list(contract_rows or [])
+                    contracts.extend(contract_rows or [])
+                    provider_listing_details.append(listing_diag)
+                    job.log(
+                        f"Fetched {len(contract_rows)} contracts for {underlying}"
+                        f" across {listing_diag.get('provider_page_count')} pages"
+                        + (
+                            ""
+                            if listing_diag.get("pagination_completed", True)
+                            else " (pagination incomplete)"
+                        )
+                    )
+                except Exception as e:
+                    contracts_by_underlying[underlying] = []
+                    job.log(f"WARN: list contracts {underlying}: {e}")
+            provider_listing = {
+                "total_contracts_fetched": len(contracts),
+                "total_expirations_fetched": len(
+                    {
+                        str(
+                            c.get("expiration_date")
+                            or c.get("expirationDate")
+                            or c.get("exp_date")
+                            or ""
+                        )[:10]
+                        for c in contracts
+                        if c.get("expiration_date") or c.get("expirationDate") or c.get("exp_date")
+                    }
+                ),
+                "pagination_completed": all(
+                    detail.get("pagination_completed", True) for detail in provider_listing_details
+                ),
+                "provider_page_count": sum(
+                    int(detail.get("provider_page_count", 0) or 0)
+                    for detail in provider_listing_details
+                ),
+                "provider_truncation": any(
+                    detail.get("provider_truncation", False) for detail in provider_listing_details
+                ),
+                "details": provider_listing_details,
+                "aggregate_chain_cache_source": aggregate_chain_cache_source,
+                "fetch_path": "bulk_listing",
+                "selected_expiry_resolution_mode": (
+                    "aggregate_listing"
+                    if fmode == "all"
+                    else ("listing_search" if expiry_override_key else "next_expiry_from_listing")
+                ),
+                "listing_truncated": any(
+                    detail.get("provider_truncation", False) for detail in provider_listing_details
+                ),
+                "selected_expiry_guaranteed": False,
+                "fallback_used": False,
+            }
+            job.log(f"Total merged contracts: {len(contracts)}")
+
         if job.cancel_event.is_set():
             job.status = "cancelled"
             job.log("Cancelled pre-filter")
             raise asyncio.CancelledError()
 
-        # Nearest expiry by metadata only
-        next_expiry_key = expiry_override
         if not next_expiry_key and only_next_expiry:
-            from datetime import datetime, timezone
-
-            now = time.time()
-            best_T = float("inf")
-            for c in contracts:
-                try:
-                    exp = (
-                        c.get("expiration_date")
-                        or c.get("expirationDate")
-                        or c.get("exp_date")
-                        or ""
-                    )
-                    if len(exp) >= 10:
-                        dt = datetime.fromisoformat(exp[:10]).replace(tzinfo=timezone.utc)
-                        T = (dt.timestamp() - now) / (365 * 24 * 3600)
-                        if T and T > 0 and T < best_T:
-                            best_T = T
-                            next_expiry_key = exp
-                except Exception:
-                    pass
-            job.log(f"Next expiry derived quickly: {next_expiry_key or 'unknown'}")
-
-        # Normalize expiry keys for consistent comparisons
-        expiry_override_key = (
-            expiry_override[:10] if isinstance(expiry_override, str) else expiry_override
-        )
-        next_expiry_key_norm = (
-            next_expiry_key[:10] if isinstance(next_expiry_key, str) else next_expiry_key
-        )
-        # Candidates within window and (optionally) next expiry
-        candidates = []
-        try:
-            from datetime import datetime, timezone
-
-            today_iso = datetime.now(timezone.utc).date().isoformat()
-        except Exception:
-            today_iso = ""
-        fmode = (expiry_mode or "").strip().lower()
-        for c in contracts:
-            tkr = c.get("ticker") or c.get("symbol") or c.get("option_ticker")
-            if not tkr:
-                continue
-            try:
-                k = float(c.get("strike_price") or c.get("strikePrice") or c.get("strike") or 0)
-            except Exception:
-                continue
-            if not (lo <= k <= hi):
-                continue
-            exp_raw = c.get("expiration_date") or c.get("expirationDate") or c.get("exp_date") or ""
-            exp = exp_raw[:10] if isinstance(exp_raw, str) else exp_raw
-            # Apply expiry filter precedence
-            if fmode == "zero_dte":
-                if today_iso and exp[:10] != today_iso:
-                    continue
-            elif fmode == "exclude_selected" and expiry_override_key:
-                if exp == expiry_override_key:
-                    continue
-            elif next_expiry_key_norm and exp != next_expiry_key_norm:
-                continue
-            typ_raw = (c.get("contract_type") or c.get("type") or "").lower()
-            opt_type = (
-                "call"
-                if typ_raw.startswith("c")
-                else (
-                    "put" if typ_raw.startswith("p") else ("call" if "C" in (tkr or "") else "put")
-                )
-            )
-            candidates.append((tkr, k, exp, opt_type))
-
-        job.log(f"Prefiltered to {len(candidates)} in-window contracts before GEX snapshots")
-
-        concurrency = int(os.getenv("POLYGON_CONCURRENCY", "8"))
-        sem = asyncio.Semaphore(max(concurrency, 1))
-
-        async def fetch_snap_gex(tkr: str, strike: float, expiry: str, opt_type: str) -> dict:
-            delay = 0.25
-            for _ in range(5):
-                try:
-                    async with sem:
-                        data = await fetch_oi_iv_by_filters(
-                            client, symbol, strike, expiry, opt_type
-                        )
-                        if not data:
-                            data = await fetch_option_oi_iv(client, tkr)
-                    if data:
-                        return data
-                except Exception:
-                    pass
-                await asyncio.sleep(delay)
-                delay = min(2.0, delay * 2)
-            return {}
-
-        rows = []
-        # Keep raw contract inputs to compute a proper flip level later
-        raw_items: list[tuple[float, float, float, float, float]] = []  # (K, iv, T, oi, sgn)
-        total_oi = 0.0
-        done = 0
-        total = max(len(candidates), 1)
-        for tkr, k, exp, opt_type in candidates:
-            if job.cancel_event.is_set():
-                job.status = "cancelled"
-                job.log("Cancelled during GEX snapshots")
-                raise asyncio.CancelledError()
-            snap = await fetch_snap_gex(tkr, k, exp, opt_type)
-            oi = float(snap.get("oi") or 0.0)
-            iv = float(snap.get("iv") or 0.25)
-            try:
-                total_oi += max(oi, 0.0)
-            except Exception:
-                pass
-            # time to expiry
             try:
                 from datetime import datetime, timezone
 
-                if len(exp) >= 10:
-                    dt = datetime.fromisoformat(exp[:10]).replace(tzinfo=timezone.utc)
-                    T = max((dt.timestamp() - time.time()) / (365 * 24 * 3600), 1 / 365)
-                else:
-                    T = 30 / 365
-            except Exception:
-                T = 30 / 365
-            gamma = bs_gamma(spot, k, T, 0.0, 0.0, iv)
-            sgn = 1.0 if opt_type == "call" else -1.0
-            gex = sgn * gamma * oi * CONTRACT_MULTIPLIER * (spot * spot)
-            rows.append({"strike": k, "option_type": opt_type, "gex": gex})
-            # Save raw components for a spot‑dependent root solve later
-            try:
-                raw_items.append((float(k), float(iv), float(T), float(max(oi, 0.0)), float(sgn)))
+                now = time.time()
+                best_t = float("inf")
+                for contract in contracts:
+                    exp = (
+                        contract.get("expiration_date")
+                        or contract.get("expirationDate")
+                        or contract.get("exp_date")
+                        or ""
+                    )
+                    if len(str(exp)) < 10:
+                        continue
+                    try:
+                        dt = datetime.fromisoformat(str(exp)[:10]).replace(tzinfo=timezone.utc)
+                        time_to_expiry = (dt.timestamp() - now) / (365 * 24 * 3600)
+                    except Exception:
+                        continue
+                    if time_to_expiry and time_to_expiry > 0 and time_to_expiry < best_t:
+                        best_t = time_to_expiry
+                        next_expiry_key = str(exp)
             except Exception:
                 pass
-            done += 1
-            if done % 10 == 0:
-                job.progress = min(0.1 + 0.85 * (done / total), 0.95)
+            job.log(f"Next expiry derived quickly: {next_expiry_key or 'unknown'}")
 
-        df = pd.DataFrame(rows)
-        if df.empty:
+        next_expiry_key_norm = next_expiry_key[:10] if isinstance(next_expiry_key, str) else next_expiry_key
+
+        if fmode == "all":
+            if not chain_rows:
+                chain_rows, snapshot_fetch = await fetch_aggregate_gamma_chain(
+                    client,
+                    sym,
+                    spot=spot,
+                    underlyings=underlyings,
+                    contracts_by_underlying=contracts_by_underlying,
+                    provider_listing=provider_listing,
+                    max_pages_per_expiry=int(
+                        os.getenv("POLYGON_SNAPSHOT_MAX_PAGES_PER_EXPIRY", "25")
+                    ),
+                    page_limit=int(os.getenv("POLYGON_SNAPSHOT_PAGE_LIMIT", "250")),
+                )
+                provider_listing["snapshot_fetch"] = snapshot_fetch
+                provider_listing["aggregate_chain_cache_source"] = aggregate_chain_cache_source
+                chain_cache_payload = {
+                    "contracts": contracts,
+                    "contracts_by_underlying": contracts_by_underlying,
+                    "chain_rows": chain_rows,
+                    "provider_listing": provider_listing,
+                }
+                chain_cache_key = _aggregate_gamma_chain_cache_key(sym, spot)
+                try:
+                    job_manager.cache_set(chain_cache_key, chain_cache_payload)
+                    disk_cache_set(chain_cache_key, chain_cache_payload)
+                except Exception:
+                    pass
+                job.log(
+                    "Aggregate gamma chain built from paginated expiry snapshots "
+                    f"with {len(chain_rows)} normalized rows"
+                )
+            else:
+                provider_listing.setdefault(
+                    "snapshot_fetch",
+                    {
+                        "total_snapshot_rows": len(chain_rows),
+                        "available_expirations": sorted(
+                            {
+                                str(row.get("expiry"))[:10]
+                                for row in chain_rows
+                                if row.get("expiry")
+                            }
+                        ),
+                    },
+                )
+            profile = build_gamma_profile(
+                chain_rows,
+                spot,
+                selected_scope="all",
+                selected_expiry=None,
+                expirations=selected_expiration_set,
+                include_0dte=not remove_0dte_flag,
+                remove_0dte=remove_0dte_flag,
+                chart_strike_range=(lo, hi),
+                today_iso=today_iso,
+                include_solver_curve=include_solver_curve,
+                solver_config=solver_config,
+            )
+        else:
+            target_expiries: set[str] = set()
+            if fmode == "zero_dte" and today_iso:
+                target_expiries.add(today_iso)
+            elif fmode == "exclude_selected":
+                target_expiries = set()
+            elif next_expiry_key_norm:
+                target_expiries.add(next_expiry_key_norm)
+
+            if target_expiries and not chain_rows and contracts_by_underlying:
+                selected_contracts_by_underlying: dict[str, list[dict]] = {}
+                for underlying, rows in contracts_by_underlying.items():
+                    selected_contracts_by_underlying[underlying] = [
+                        row
+                        for row in (rows or [])
+                        if (
+                            (
+                                row.get("expiration_date")
+                                or row.get("expirationDate")
+                                or row.get("exp_date")
+                                or ""
+                            )[:10]
+                            in target_expiries
+                        )
+                    ]
+                chain_rows, snapshot_fetch = await fetch_aggregate_gamma_chain(
+                    client,
+                    sym,
+                    spot=spot,
+                    underlyings=underlyings,
+                    contracts_by_underlying=selected_contracts_by_underlying,
+                    provider_listing=provider_listing,
+                    max_pages_per_expiry=int(
+                        os.getenv("POLYGON_SNAPSHOT_MAX_PAGES_PER_EXPIRY", "25")
+                    ),
+                    page_limit=int(os.getenv("POLYGON_SNAPSHOT_PAGE_LIMIT", "250")),
+                )
+                provider_listing["snapshot_fetch"] = snapshot_fetch
+                provider_listing["fetch_path"] = "bulk_listing_then_expiry_snapshot"
+                provider_listing["selected_expiry_resolution_mode"] = (
+                    "listing_search" if expiry_override_key else "next_expiry_from_listing"
+                )
+                provider_listing["listing_truncated"] = bool(
+                    provider_listing.get("provider_truncation", False)
+                )
+                provider_listing["selected_expiry_guaranteed"] = bool(
+                    target_expiries
+                    and not provider_listing.get("provider_truncation", False)
+                    and set(snapshot_fetch.get("available_expirations") or []).issuperset(
+                        set(target_expiries)
+                    )
+                )
+                provider_listing["fallback_used"] = False
+                job.log(
+                    "Single-expiry gamma chain built from bulk expiry snapshots "
+                    f"for {','.join(sorted(target_expiries))} with {len(chain_rows)} normalized rows"
+                )
+
+            if not chain_rows and contracts:
+                candidates = []
+                for contract in contracts:
+                    ticker = contract.get("ticker") or contract.get("symbol") or contract.get("option_ticker")
+                    if not ticker:
+                        continue
+                    try:
+                        strike = float(
+                            contract.get("strike_price")
+                            or contract.get("strikePrice")
+                            or contract.get("strike")
+                            or 0
+                        )
+                    except Exception:
+                        continue
+                    exp_raw = (
+                        contract.get("expiration_date")
+                        or contract.get("expirationDate")
+                        or contract.get("exp_date")
+                        or ""
+                    )
+                    expiry = exp_raw[:10] if isinstance(exp_raw, str) else exp_raw
+                    if fmode == "zero_dte":
+                        if today_iso and expiry[:10] != today_iso:
+                            continue
+                    elif fmode == "exclude_selected" and expiry_override_key:
+                        if expiry == expiry_override_key:
+                            continue
+                    elif next_expiry_key_norm and expiry != next_expiry_key_norm:
+                        continue
+                    opt_type_raw = (contract.get("contract_type") or contract.get("type") or "").lower()
+                    option_type = (
+                        "call"
+                        if opt_type_raw.startswith("c")
+                        else ("put" if opt_type_raw.startswith("p") else ("call" if "C" in ticker else "put"))
+                    )
+                    candidates.append((ticker, strike, expiry, option_type))
+                job.log(
+                    f"Prefiltered to {len(candidates)} included contracts before OI/IV snapshots; "
+                    f"chart strike window remains [{lo:.2f}, {hi:.2f}]"
+                )
+                provider_listing["fetch_path"] = "listing_then_contract_snapshot"
+                provider_listing["selected_expiry_resolution_mode"] = (
+                    "listing_search" if expiry_override_key else "next_expiry_from_listing"
+                )
+                provider_listing["listing_truncated"] = bool(
+                    provider_listing.get("provider_truncation", False)
+                )
+                provider_listing["selected_expiry_guaranteed"] = bool(
+                    not provider_listing.get("provider_truncation", False)
+                    and bool(next_expiry_key_norm or fmode == "zero_dte")
+                )
+                provider_listing["fallback_used"] = True
+
+                concurrency = int(os.getenv("POLYGON_CONCURRENCY", "8"))
+                sem = asyncio.Semaphore(max(concurrency, 1))
+
+                async def fetch_snap_gex(tkr: str, strike: float, expiry: str, opt_type: str) -> dict:
+                    delay = 0.25
+                    for _ in range(5):
+                        try:
+                            async with sem:
+                                data = await fetch_oi_iv_by_filters(
+                                    client, symbol, strike, expiry, opt_type
+                                )
+                                if not data:
+                                    data = await fetch_option_oi_iv(client, tkr)
+                            if data:
+                                return data
+                        except Exception:
+                            pass
+                        await asyncio.sleep(delay)
+                        delay = min(2.0, delay * 2)
+                    return {}
+
+                total = max(len(candidates), 1)
+                for idx, (tkr, strike, expiry, opt_type) in enumerate(candidates, start=1):
+                    if job.cancel_event.is_set():
+                        job.status = "cancelled"
+                        job.log("Cancelled during GEX snapshots")
+                        raise asyncio.CancelledError()
+                    snap = await fetch_snap_gex(tkr, strike, expiry, opt_type)
+                    try:
+                        from datetime import datetime, timezone
+
+                        dt = datetime.fromisoformat(str(expiry)[:10]).replace(tzinfo=timezone.utc)
+                        t_years = max((dt.timestamp() - time.time()) / (365 * 24 * 3600), 1 / 365)
+                    except Exception:
+                        t_years = 30 / 365
+                    chain_rows.append(
+                        {
+                            "ticker": tkr,
+                            "strike": strike,
+                            "option_type": opt_type,
+                            "oi": float(snap.get("oi") or 0.0),
+                            "iv": float(snap.get("iv") or 0.25),
+                            "expiry": expiry,
+                            "t_years": t_years,
+                            "contract_size": CONTRACT_MULTIPLIER,
+                        }
+                    )
+                    if idx % 10 == 0:
+                        job.progress = min(0.1 + 0.85 * (idx / total), 0.95)
+            profile = build_gamma_profile(
+                chain_rows,
+                spot,
+                selected_scope="selected",
+                selected_expiry=next_expiry_key_norm,
+                expirations=[next_expiry_key_norm] if next_expiry_key_norm else None,
+                include_0dte=not remove_0dte_flag,
+                remove_0dte=remove_0dte_flag,
+                chart_strike_range=(lo, hi),
+                today_iso=today_iso,
+                include_solver_curve=include_solver_curve,
+                solver_config=solver_config,
+            )
+
+        profile_diag = dict(profile.get("zero_gamma_diagnostics") or {})
+        profile_diag.update(provider_listing)
+        profile["zero_gamma_diagnostics"] = profile_diag
+        profile_error = None
+        if int(profile_diag.get("included_row_count") or 0) == 0:
+            dropped = dict(profile_diag.get("dropped_rows_by_reason") or {})
+            invalid_iv_rows = int(dropped.get("invalid_implied_volatility", 0) or 0)
+            raw_included = int(
+                profile_diag.get("raw_included_row_count")
+                or profile_diag.get("input_row_count")
+                or 0
+            )
+            if invalid_iv_rows and invalid_iv_rows >= raw_included:
+                profile_error = (
+                    "Provider returned no usable implied volatility data for the selected expirations"
+                )
+            else:
+                profile_error = "No usable option contracts were available for the selected expirations"
+        if not profile["strikes"]:
             job.progress = 1.0
             disp_exp = next_expiry_key
             if fmode == "zero_dte" and today_iso:
                 disp_exp = today_iso
-            return df, {"expiry": disp_exp, "spot": spot}
-        agg = df.groupby(["strike", "option_type"], as_index=False)["gex"].sum()
-        pivot = agg.pivot(index="strike", columns="option_type", values="gex").fillna(0.0)
-        pivot = pivot.rename(columns={"call": "gex_calls", "put": "gex_puts"})
-        pivot["gex_net"] = pivot.get("gex_calls", 0.0) + pivot.get("gex_puts", 0.0)
-        pivot = pivot.sort_index()
-        # Compute a more principled flip: price S where total net GEX(S) == 0.
-        # If we cannot bracket a root, fall back to the cumulative-crossing proxy.
-        flip = None
-        try:
-            import numpy as _np
-
-            def net_gex_at(S: float) -> float:
-                # Sum over all contracts using current candidate price S
-                tot = 0.0
-                SS = S * S
-                for K, iv, T, oi, sgn in raw_items:
-                    if oi <= 0 or iv <= 0 or T <= 0:
-                        continue
-                    try:
-                        g = bs_gamma(S, K, T, 0.0, 0.0, iv)
-                        tot += sgn * g * oi * CONTRACT_MULTIPLIER * SS
-                    except Exception:
-                        continue
-                return float(tot)
-
-            # Define a search window around observed strikes; widen modestly
-            if len(raw_items) >= 2:
-                strikes = _np.array([it[0] for it in raw_items], dtype=float)
-                s_min = float(_np.nanmin(strikes))
-                s_max = float(_np.nanmax(strikes))
-            else:
-                s_min = float(spot * max(0.5, 1 - 2 * pct_window))
-                s_max = float(spot * (1 + 2 * pct_window))
-            lo_s = min(s_min, spot) * 0.98
-            hi_s = max(s_max, spot) * 1.02
-            if not math.isfinite(lo_s) or not math.isfinite(hi_s) or hi_s <= lo_s:
-                lo_s, hi_s = spot * (1 - pct_window), spot * (1 + pct_window)
-
-            # Sample the function to find brackets where it changes sign
-            grid = _np.linspace(lo_s, hi_s, 121)
-            vals = _np.array([net_gex_at(float(s)) for s in grid], dtype=float)
-
-            # Prefer a root nearest to the current spot
-            sign_changes: list[tuple[int, float]] = []
-            for i in range(1, len(grid)):
-                a, b = vals[i - 1], vals[i]
-                if not (_np.isfinite(a) and _np.isfinite(b)):
-                    continue
-                if (a == 0) or (b == 0) or (a < 0) != (b < 0):
-                    # bracket index and mid distance to spot for ordering
-                    mid = 0.5 * (grid[i - 1] + grid[i])
-                    sign_changes.append((i, abs(mid - spot)))
-
-            def refine_root(a_s: float, b_s: float) -> float:
-                fa, fb = net_gex_at(a_s), net_gex_at(b_s)
-                # bisection with a few iterations; guard for identical signs
-                if fa == 0:
-                    return float(a_s)
-                if fb == 0:
-                    return float(b_s)
-                if fa * fb > 0:
-                    # no bracket; return linear interpolation guess
-                    t = 0.5
-                    return float(a_s + t * (b_s - a_s))
-                lo, hi = a_s, b_s
-                for _ in range(20):
-                    mid = 0.5 * (lo + hi)
-                    fm = net_gex_at(mid)
-                    if fm == 0 or abs(hi - lo) < 1e-4:
-                        return float(mid)
-                    if (fa < 0) != (fm < 0):
-                        hi, fb = mid, fm
-                    else:
-                        lo, fa = mid, fm
-                return float(0.5 * (lo + hi))
-
-            if sign_changes:
-                # Pick the bracket whose midpoint is closest to spot
-                sign_changes.sort(key=lambda t: t[1])
-                idx = sign_changes[0][0]
-                flip = refine_root(float(grid[idx - 1]), float(grid[idx]))
-            else:
-                # Fallback: choose point with minimal |net_gex_at(S)| in grid
-                j = int(_np.argmin(_np.abs(vals))) if len(vals) else None
-                if j is not None and len(grid):
-                    flip = float(grid[int(j)])
-
-            # If the above failed, fall back to the original cumulative-crossing proxy
-            if flip is None or not math.isfinite(flip):
-                xs = _np.array(pivot.index.tolist(), dtype=float)
-                yn = _np.array(pivot["gex_net"].tolist(), dtype=float)
-                csum = _np.cumsum(yn)
-                for i in range(1, len(xs)):
-                    if csum[i - 1] <= 0 <= csum[i] or csum[i - 1] >= 0 >= csum[i]:
-                        x0, x1 = xs[i - 1], xs[i]
-                        y0, y1 = csum[i - 1], csum[i]
-                        if (y1 - y0) != 0:
-                            t = -y0 / (y1 - y0)
-                            flip = float(x0 + t * (x1 - x0))
-                        else:
-                            flip = float(x0)
-                        break
-        except Exception:
-            # Keep None; UI will just omit the line
-            pass
+            expiry_label = (
+                next(iter(requested_expiry_keys))
+                if len(requested_expiry_keys) == 1
+                else (
+                    f"{len(profile.get('included_expirations') or [])} expirations"
+                    if profile.get("included_expirations")
+                    else disp_exp
+                )
+            )
+            return pd.DataFrame(), {
+                "expiry": expiry_label,
+                "spot": spot,
+                "net_gex": 0.0,
+                "total_gamma_at_spot": None,
+                "raw_signed_gamma": None,
+                "zero_gamma": None,
+                "gamma_regime": "Gamma Regime Unavailable",
+                "spot_vs_zero_gamma": "No Zero Gamma in tested range",
+                "zero_gamma_diagnostics": profile["zero_gamma_diagnostics"],
+                "zero_gamma_curve": [],
+                "expiry_mode": fmode or "selected",
+                "total_oi": 0.0,
+                "include_0dte": not remove_0dte_flag,
+                "remove_0dte": bool(remove_0dte_flag),
+                "provider_listing": provider_listing,
+                "solver_config": dict(profile.get("solver_config") or {}),
+                "solver_profile_label": profile.get("solver_profile_label"),
+                "net_gex_formula": profile.get("net_gex_formula"),
+                "raw_signed_gamma_formula": profile.get("raw_signed_gamma_formula"),
+                "error": profile_error,
+            }
+        pivot = pd.DataFrame(
+            {
+                "strike": profile["strikes"],
+                "gex_calls": profile["gex_calls"],
+                "gex_puts": profile["gex_puts"],
+                "gex_net": profile["gex_net"],
+                "gex_cumulative": profile["gex_cumulative"],
+            }
+        )
         job.progress = 1.0
         try:
-            if flip is not None and math.isfinite(flip):
-                job.log(f"GEX completed with {len(pivot)} strikes. Flip≈{flip:.2f}")
+            zero_gamma = profile["zero_gamma"]
+            if zero_gamma is not None and math.isfinite(zero_gamma):
+                job.log(f"GEX completed with {len(pivot)} strikes. Zero gamma≈{zero_gamma:.2f}")
             else:
-                job.log(f"GEX completed with {len(pivot)} strikes. Flip unavailable")
+                job.log(
+                    "GEX completed with "
+                    f"{len(pivot)} strikes. No zero gamma in tested range; "
+                    f"total gamma at spot={float(profile['total_gamma_at_spot'] or 0.0):.2f}"
+                )
         except Exception:
             job.log(f"GEX completed with {len(pivot)} strikes.")
         disp_exp = next_expiry_key
         if fmode == "zero_dte" and today_iso:
             disp_exp = today_iso
-        return pivot.reset_index(), {
-            "expiry": disp_exp,
+        expiry_label = (
+            next(iter(requested_expiry_keys))
+            if len(requested_expiry_keys) == 1
+            else (
+                f"{len(profile.get('included_expirations') or [])} expirations"
+                if profile.get("included_expirations")
+                else disp_exp
+            )
+        )
+        return pivot, {
+            "expiry": expiry_label,
             "spot": spot,
-            "gex_flip": flip,
+            "net_gex": float(profile["net_gex"]),
+            "total_gamma_at_spot": float(profile["total_gamma_at_spot"] or 0.0),
+            "raw_signed_gamma": float(profile["raw_signed_gamma"] or 0.0),
+            "zero_gamma": profile["zero_gamma"],
+            "gamma_regime": profile["gamma_regime"],
+            "spot_vs_zero_gamma": profile["spot_vs_zero_gamma"],
+            "zero_gamma_diagnostics": profile["zero_gamma_diagnostics"],
+            "zero_gamma_curve": (
+                profile["zero_gamma_diagnostics"].get("curve")
+                if include_solver_curve
+                else []
+            ),
             "expiry_mode": fmode or "selected",
-            "total_oi": float(total_oi),
+            "total_oi": float(profile["total_oi"]),
+            "include_0dte": not remove_0dte_flag,
+            "remove_0dte": bool(remove_0dte_flag),
+            "included_expirations": list(profile.get("included_expirations") or []),
+            "excluded_expirations": list(profile.get("excluded_expirations") or []),
+            "provider_listing": provider_listing,
+            "solver_config": dict(profile.get("solver_config") or {}),
+            "solver_profile_label": profile.get("solver_profile_label"),
+            "net_gex_formula": profile.get("net_gex_formula"),
+            "raw_signed_gamma_formula": profile.get("raw_signed_gamma_formula"),
+            "error": profile_error,
         }

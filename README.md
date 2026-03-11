@@ -1,118 +1,137 @@
 # Dave's Stock Tools
 
-Interactive FastAPI app for analyzing stock option Vanna/GEX profiles and a multi-ticker gamma scanner. Built as a personal experiment for fast prototyping and “vibe-coding” mainly with ChatGPT 5.1/5.2 Codex-Max and VS Code. Current version: **v0.1.0** (semantic versioning; bump in `core/__init__.py`).
+FastAPI application for local options-flow analysis across three workflows:
 
-The main intention was a personalized tool for running locally to aid in stock monitoring, supplementing other information sources. Sharing to Github as a reference for others to what you can do with trendy tools. If desiring a test drive without using the Massive API, go to the home page and select demo mode to go for a test drive.
+- `GEX / Zero Gamma` ticker analysis with spot-space zero-gamma solving and strike-space charts
+- `Gamma Scanner` for multi-ticker net GEX and regime monitoring
+- `Vanna Ticker` for strike-by-strike vanna profiles and cumulative context
 
 **NOT Investment Advice** for using this tool at your own discretion.
 
 ## Main Features
 
-- Vanna and GEX heatmaps per ticker using Massive API (formerly Polygon) snapshots. Tunable expiry scope (0DTE/1DTE/weeklies/monthlies), strike windows, caching, auto-refresh, sorting, and other UX niceties.
-- Gamma scanner across a watchlist with flip detection, per-ticker ± windows, GEX trend deltas, OI trend sparklines, and column sorting (click to cycle asc/desc/natural + drag to reorder when “natural”). Jobs are parallelized and cached, but large lists can still take a few minutes.
-- News/events pages (Massive news + Investing.com RSS).
-- Unified debug console to watch server/client logs.
+`v0.2.0` is the first post-release architecture pass after `v0.1.0`. The project now centers on a shared gamma math layer, faster bulk-snapshot query paths, clearer diagnostics, and a more consistent UI for ticker, scanner, and demo-mode exploration.
 
-## Gamma Scanner Highlights
+## What's New In v0.2.0
 
-- Add tickers with individual ±% windows; watchlist is persisted locally (browser storage) and supports quick clear/re-add flows.
-- Sorting: click a column header to toggle asc/desc/natural order; “natural” turns on drag handles so you can pin your own ordering. Default “Score” sorts by farthest flip distance across expirations.
-- Columns: weekly/monthly/all flip strikes with distances, Top Gamma Strike with % change, GEX Trend (% change in net GEX above the top call strike vs prior snapshot), and OI Trend sparklines for context.
-- Runs show progress + ETA; you can stop a scan mid-run. GEX links on each row open the ticker’s GEX view with the matching window.
+- Replaced the old Macro/Micro flip-centric workflow with a canonical Zero Gamma and Gamma Regime model shared across the GEX ticker and scanner.
+- Refactored gamma computation into `core/gamma_math.py`, including solver presets, reduced-universe refinement, and explicit diagnostics.
+- Moved single-expiry GEX runs onto bulk expiry-snapshot fetches, improving parity with aggregate and scanner paths while preserving a fallback when provider responses are incomplete.
+- Corrected net GEX unit handling and separated the page headline `Net GEX (Spot-Scaled)` metric from the internal solver's raw signed gamma values.
+- Modernized the GEX and Vanna pages with stronger information hierarchy, advanced settings panels, full-details views, and copy-to-clipboard debug JSON.
+- Simplified the scanner around the current gamma model: Zero Gamma, Gamma Regime, Net GEX, and solver confidence.
+- Refreshed demo mode so first-run screenshots and click-through exploration render with current-looking expirations and populated states.
 
-## Intentional Design Tradeoffs
+## Main Capabilities
 
-- Local-only persistence via browser storage for favorites; no auth/identity since this was built for personal use. Add your own multi-user auth later if needed.
-- Cache targets frequent Massive (Polygon) calls without a full database. GEX data is shared across tickers/window sizes and kept over time for pseudo-historical views (not part of the Massive API tier used here).
-- Unified Debug Console helps debug stuck jobs/progress and can be extended for other logging needs.
-- TradingView workflow: copied/pasted generated Pine overlays directly into TradingView instead of publishing/auto-updating to avoid license issues and hosting overhead.
-- Job worker performance: built for a premium Massive options plan, so rate limits weren’t a concern. Adjust workers/parallel requests for other tiers via **SCANNER_CONCURRENCY** (scanner fan-out) and **POLYGON_CONCURRENCY** (Massive request fan-out).
+### GEX / Zero Gamma
 
-## Comments and Objectives of Dave's Stock Tools
+- Strike-space GEX charts for calls, puts, and accumulated net GEX
+- Spot-space Zero Gamma solving with configurable horizons, strike bands, tail handling, and refinement modes
+- Gamma Regime and solver-confidence context for parity/debugging work
+- Export helpers for TradingView pairs and Pine snippets
 
-1. **Vibe Coding** - I explored the use case of AI assist for coding a set of requirements, whereby I started with an initial set of firm requirements but iterated through the rest as I tried to use the tool/output along the way. The codex started in GPT 5, but as 5.1 Max came along, I could see a large increase in the capability of avoiding "*2 step forward, 1 step back*" situations with causing errors or nailing the requirement on the first prompt. I suspect this improves tremendously in the future as the AI giants iterate.
-2. **Dogfood a Tool from Scratch** - I built a very capable and successful tool for my stock trading habits, where I start with GEX exposure analysis for 0DTE, 1DTE, weekly and monthly analysis for taking positions. Shoutout to Geeks of Finance and TanukiTrade for getting me started on this financial path.
-3. **FastAPI and python** - I selected this tech stack since I'm comfortable in python myself. Obviously, this can be done in many other languages as necessary for the backend, and is probably very portable on the templated front end abstraction architecture.
+### Gamma Scanner
 
-## Quickstart
+- Watchlist scanning across weekly, monthly, or aggregate expiry scopes
+- Per-ticker windows, 0DTE removal toggle, sortable results, and direct drill-down into the GEX ticker
+- Shared zero-gamma math with the single-ticker GEX page so scanner and ticker stay aligned
 
-```bash
-# create a project-local venv (IDE-friendly)
-python3 -m venv .venv
-source .venv/bin/activate
+### Vanna Ticker
 
-# install deps (dev includes lint/test tools)
-pip install -r requirements-dev.txt
-
-# configure secrets (MASSIVE_API_KEY)
-cp .env.example .env
-# defaults: scanner starts with SPY/QQQ/AAPL/MSFT/NVDA at a 10% window; change in the UI or tweak `SCANNER_DEFAULTS` in `core/web.py` if you want a different starting list.
-```
-
-Populate `.env` with `DEMO_MODE=1` to use the built-in sample tickers (AAPL/MSFT/SPY/QQQ/NVDA) and click around without any API keys. Set `DEMO_MODE=0` and fill in `MASSIVE_API_KEY` (or legacy `POLYGON_API_KEY`) for live data. For production or shared demos, set a unique `SESSION_SIGNER_SECRET` (explained below). Then:
-
-```bash
-uvicorn app:app --reload --host 0.0.0.0 --port 8000
-# or
-./start_server.sh
-```
-
-If you prefer a shared venv elsewhere, set `VENV_PATH` before running `start_server.sh` and activate that env manually in your shell/IDE.
-
-## Secrets & Environment
-
-- `.env` and other env files are gitignored; `.env.example` is the safe template to commit.
-- `DEMO_MODE`: when `1`, all ticker endpoints serve bundled demo data (no Massive calls). Set to `0` + provide `MASSIVE_API_KEY`/`POLYGON_API_KEY` to use live data.
-- `SESSION_SIGNER_SECRET`: used to sign the session cookie so it can’t be forged/tampered with. For solo local use, the default is fine; for any shared deployment or if you care about session integrity, set this to a long random string.
-- `CORS_ALLOW_ORIGINS`: comma-separated allowlist (e.g., `http://localhost:8000,http://127.0.0.1:8000`). If unset, CORS is disabled. Set `*` to allow all origins (credentials will be disabled).
-- `CORS_ALLOW_CREDENTIALS`: `1` to allow cookies/credentials for cross-origin requests (requires explicit origins).
-- Keep API keys (`MASSIVE_API_KEY`/`POLYGON_API_KEY`) and `SESSION_SIGNER_SECRET` only in `.env` or shell environment when deploying/publishing.
-
-### Session Signing Secret (what/why)
-
-- Every browser session gets a signed cookie so the server can associate background jobs (scanner/Vanna/GEX) to you and guard cached results. Signing stops anyone from forging another user’s cookie.
-- Local-only usage can rely on the default; any shared or deployed environment should set `SESSION_SIGNER_SECRET` to a unique, long random string.
-
-## Demo vs Live Data
-
-- Demo mode (`DEMO_MODE=1`) ships with example scanner/GEX/Vanna payloads so the UI renders fully without an API key. Great for screenshots, local demos, or onboarding.
-- Live mode (`DEMO_MODE=0`) fetches real data from Massive (Polygon) and requires `MASSIVE_API_KEY` (or `POLYGON_API_KEY`).
-- Switch modes by toggling `DEMO_MODE` in `.env` and restarting the server, or click the Demo Mode button on the home page (next to the Unified Debug Console link) to set it via cookie.
+- Per-strike and cumulative vanna charts
+- Weighting controls, expiry/scope controls, spot overrides, and full diagnostic details
+- Same job-management and demo-mode workflow as the gamma pages
 
 ## Screenshots
 
-See `screenshots/` folder for examples:
+All screenshots below are captured in demo mode with bundled sample data.
 
-- GEX Ticker Example
-- Vanna Ticker Example
-- Gamma Scanner Example
+### Home
 
-## Tests & Quality
+![Home demo](screenshots/home-demo.png)
 
-- Unit tests: `pytest` (requires dev deps installed)
-- Lint: `ruff check .`
-- Format: `black .`
+### GEX Ticker
 
-`pyproject.toml` contains shared configuration. Add more coverage in `tests/` as features evolve.
+![GEX ticker demo](screenshots/gex-ticker-demo-nvda.png)
 
-## Project Layout
+### Gamma Scanner
 
-- `app.py` – FastAPI entrypoint (imports composed router from `routes/`).
-- `routes/` – modular routers (debug console, events/news).
-- `views.py` – main page + API routes for Vanna/GEX/scanner.
-- `engine.py` – core Vanna/GEX computation helpers and Massive (Polygon) fetchers.
-- `start_server.sh` – convenience launcher that loads `.env`.
+![Gamma scanner demo](screenshots/gamma-scanner-demo.png)
 
-## Releases & Versioning
+### Vanna Ticker
 
-- Semantic version lives in `core/__init__.py` as `__version__`; bump MAJOR.MINOR.PATCH when shipping changes.
-- Tag releases with git for GitHub: `git tag -a v0.1.0 -m "Release scanner sorting + GEX trend"` then `git push origin main --tags`.
+![Vanna ticker demo](screenshots/vanna-ticker-demo-nvda.png)
 
-## Notes
+## Architecture
 
-- Massive (Polygon) powers live data; keep `DEMO_MODE=1` if you want a credential-free demo.
-- All runtime state (jobs, logs, caches) is in-memory; multi-process deployments need a shared backend.
+The `v0.2.0` release re-centers the project around a shared gamma math layer, a bulk-snapshot query engine, and a more explicit diagnostics model.
+
+The full engineering overview lives in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Demo Mode
+
+Demo mode is intended for screenshots, onboarding, and drive-by repo inspection.
+
+- Set `DEMO_MODE=1` in `.env` to use bundled sample payloads without any API keys.
+- The home page also exposes a Demo Mode toggle that persists in a cookie.
+- Demo mode now returns synthetic expiry lists as well, so GEX and Vanna pages load like a realistic first-run experience.
+- The screenshots in this README represent demo-mode data, not live market output.
+
+## Running Locally
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+cp .env.example .env
+
+# Demo mode
+uvicorn app:app --reload --host 0.0.0.0 --port 8000
+```
+
+For live data, set `DEMO_MODE=0` and provide `MASSIVE_API_KEY`. `POLYGON_API_KEY` is still accepted as a compatibility alias for older local setups.
+
+## Main Pages
+
+- `/` home page for mode selection, favorites, and demo-mode toggling
+- `/gexticker/{symbol}` GEX / Zero Gamma analysis
+- `/scanner` multi-ticker gamma scanner
+- `/ticker/{symbol}` Vanna analysis
+- `/debug` unified debug console
+- `/events/{symbol}` and `/econ` supporting event/news pages
+
+## Diagnostics And Transparency
+
+`v0.2.0` adds more explicit debugging surfaces so results can be inspected instead of trusted blindly.
+
+- GEX exposes solver previews, confidence labels, included-expiration context, and a full-details panel.
+- Vanna exposes its active query state plus copyable debug JSON.
+- Scanner rows inherit the same gamma regime and confidence framing used by the single-ticker views.
+- Cache keys now track the solver profile, expiry filters, 0DTE handling, and calc-version inputs so old payloads do not masquerade as current results.
+
+## Data And Model Assumptions
+
+- Zero Gamma is solved in spot space from total signed gamma as a function of spot. It is intentionally not the same thing as the older static strike-flip approximations.
+- `Net GEX (Spot-Scaled)` is the headline page metric. The solver still works from raw signed gamma internally, and the UI now makes that distinction explicit.
+- Provider IV/OI freshness, expiry filtering, and vendor-specific weighting differences can still create drift versus external dashboards.
+- Runtime state is in-memory. Multi-process or hosted deployments would need a shared cache/job backend.
+
+## Quality
+
+- Tests: `.venv/bin/python -m pytest -q`
+- Lint: `.venv/bin/python -m ruff check .`
+- Format: `.venv/bin/python -m black .`
+
+Shared tooling config lives in `pyproject.toml`.
+
+## Release Context
+
+- Current release target: `v0.2.0`
+- Last GitHub release/tag baseline: `v0.1.0`
+- Full release notes: `RELEASE_NOTES.md`
+- Detailed changelog: `CHANGELOG.md`
 
 ## License
 
-MIT — see `LICENSE`. Copyright 2026 Dave Selinger (<https://github.com/dselinger>).
+MIT. See `LICENSE`.
