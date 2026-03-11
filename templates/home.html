@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block extra_head %}
 <style>
+  body{--page-accent:#38bdf8;--page-accent-rgb:56, 189, 248;--page-accent-soft:rgba(56,189,248,0.12);--page-accent-glow:rgba(56,189,248,0.2);--page-accent-ink:#04121a}
   .home-wrap{width:min(900px,90vw);margin:0 auto;display:flex;flex-direction:column;gap:16px}
   @media(min-width:1200px){.home-wrap{width:50vw;max-width:50vw}}
   .home-grid{display:grid;grid-template-columns:240px 1fr;gap:14px;align-items:start}
@@ -10,8 +11,8 @@
   .home-card .card-subtext{margin-bottom:14px}
   .tool-card .tool-btn{width:100%;text-align:center;font-weight:700}
   .tool-card .tool-btn + .tool-btn{margin-top:10px}
-  .tool-card .tool-btn.debug-tool{margin-top:100px}
-  .tool-btn.active{background:#1e3a8a;color:#e0f2fe;box-shadow:0 6px 18px rgba(30,58,138,0.35);transform:translateY(-1px)}
+  .tool-card .tool-btn.debug-tool{margin-top:auto}
+  .tool-btn.active{background:linear-gradient(180deg,rgba(var(--page-accent-rgb),0.3),rgba(var(--page-accent-rgb),0.2));color:#f8fafc;box-shadow:0 10px 24px rgba(var(--page-accent-rgb),0.24);border-color:rgba(var(--page-accent-rgb),0.36);transform:translateY(-1px);text-shadow:0 1px 1px rgba(2,6,23,0.32)}
   .options-card{display:flex;flex-direction:column;gap:16px}
   .options-card .form-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:14px;align-items:center}
   .options-card .form-row input[type=text]{width:140px}
@@ -21,9 +22,10 @@
   .fav-row{display:flex;flex-wrap:wrap;gap:10px}
   .home-chip-note{margin-top:6px}
   .home-footer{margin-top:18px;text-align:center;color:#94a3b8;font-size:0.9rem}
-  .card-section{border-top:1px solid #1f2937;padding-top:10px;margin-top:4px}
+  .card-section{border-top:1px solid rgba(var(--page-accent-rgb),0.12);padding-top:10px;margin-top:4px}
   .tool-card{height:100%;min-height:240px;display:flex;flex-direction:column}
   .tool-card .muted{margin-top:auto}
+  .home-footer{border-top:1px solid rgba(var(--page-accent-rgb),0.08);padding-top:14px}
 </style>
 {% endblock %}
 {% block content %}
@@ -52,7 +54,7 @@
         <div class="form-row">
           <input type="text" id="h_symbol" placeholder="Ticker (e.g. SPX, NVDA)">
           <div class="suffix-input">
-            <input type="number" id="h_window" class="num" value="10" min="0.01" max="50" step="0.5">
+            <input type="number" id="h_window" class="num" value="10" min="0.01" step="0.5">
             <span class="suffix">%</span>
           </div>
         </div>
@@ -69,7 +71,7 @@
     </div>
   </div>
 
-  <div class="home-footer" id="home_footer">© Dave's Stock Tools — v0.1.0</div>
+  <div class="home-footer" id="home_footer">© Dave's Stock Tools — v{{ app_version }}</div>
 </div>
 
 <div id="home_defaults" data-json='{{ favs_json | tojson | safe }}' hidden></div>
@@ -118,7 +120,7 @@
       const sym = f.symbol;
       const win = Number(f.window)||DEFAULT_WIN;
       return `<span class="scan-chip"><span><a href="/gexticker/${encodeURIComponent(sym)}?window=${encodeURIComponent(win)}" style="color:inherit;text-decoration:none">${sym}</a></span>
-        <input type="number" value="${win}" min="0.01" max="50" step="0.5" style="width:70px;padding:4px;border-radius:6px;border:1px solid #1f2937;background:#0f172a;color:#e5e7eb" onchange="updateFavoriteWindow('${sym}', this.value)">
+        <input type="number" value="${win}" min="0.01" step="0.5" style="width:70px;padding:4px;border-radius:6px;border:1px solid #1f2937;background:#0f172a;color:#e5e7eb" onchange="updateFavoriteWindow('${sym}', this.value)">
         <button title="Remove" onclick="removeFavorite('${sym}')">×</button></span>`;
     }).join('');
   }
@@ -213,7 +215,7 @@
     try{
       const y = new Date().getFullYear();
       const footer = document.getElementById('home_footer');
-      if(footer) footer.textContent = `© ${y} Dave's Stock Tools — v0.1.0`;
+      if(footer) footer.textContent = `© ${y} Dave's Stock Tools — v{{ app_version }}`;
     }catch(e){}
   })();
 </script>

@@ -16,6 +16,10 @@ def cache_key(
     weight: Optional[str] = None,
     spot_override: Optional[str] = None,
     expiry_mode: Optional[str] = None,
+    include_0dte: Optional[bool] = None,
+    expiry_filter: Optional[str] = None,
+    solver_profile: Optional[str] = None,
+    calc_version: Optional[str] = None,
 ) -> str:
     """Stable cache key for server-side cache + dedupe."""
     sy = (symbol or "").upper().strip()
@@ -23,11 +27,15 @@ def cache_key(
     w = (weight or "").strip()
     so = (spot_override or "auto").strip()
     em = (expiry_mode or "").strip()
+    i0 = "" if include_0dte is None else ("1" if include_0dte else "0")
+    ef = (expiry_filter or "").strip()
+    sp = (solver_profile or "").strip()
+    cv = (calc_version or "").strip()
     try:
         pw = f"{float(pct_window):.6f}"
     except Exception:
         pw = str(pct_window)
-    parts = [mode, sy, pw, "1" if next_only else "0", ex, w, so, em]
+    parts = [mode, sy, pw, "1" if next_only else "0", ex, w, so, em, i0, ef, sp, cv]
     return ":".join(parts)
 
 
@@ -114,73 +122,6 @@ def upsert_oi_history(
     except Exception:
         pass
     return pruned
-
-
-def recompute_flip_from_arrays(strikes: list, gnet: list) -> Optional[float]:
-    try:
-        import numpy as _np
-
-        xs = _np.array(strikes, dtype=float)
-        yn = _np.array(gnet, dtype=float)
-        if len(xs) < 2:
-            return None
-        csum = _np.cumsum(yn)
-        for i in range(1, len(xs)):
-            if csum[i - 1] <= 0 <= csum[i] or csum[i - 1] >= 0 >= csum[i]:
-                x0, x1 = xs[i - 1], xs[i]
-                y0, y1 = csum[i - 1], csum[i]
-                if (y1 - y0) != 0:
-                    t = -y0 / (y1 - y0)
-                    return float(x0 + t * (x1 - x0))
-                return float(x0)
-        j = int(_np.argmin(_np.abs(csum))) if len(csum) else None
-        if j is not None:
-            return float(xs[int(j)])
-    except Exception:
-        return None
-    return None
-
-
-def recompute_micro_flip_from_arrays(
-    strikes: list,
-    gnet: list | None = None,
-    calls: list | None = None,
-    puts: list | None = None,
-) -> Optional[float]:
-    """
-    Per-strike (micro) flip: zero-crossing of net GEX (non-cumulative).
-    Falls back to calls+puts if gnet is missing.
-    """
-    try:
-        arr: list[tuple[float, float]] = []
-        if strikes and gnet and len(strikes) == len(gnet):
-            for i in range(len(strikes)):
-                arr.append((float(strikes[i]), float(gnet[i] or 0.0)))
-        elif strikes and calls and puts and len(strikes) == len(calls) == len(puts):
-            for i in range(len(strikes)):
-                net = float(calls[i] or 0.0) + float(puts[i] or 0.0)
-                arr.append((float(strikes[i]), net))
-        if not arr:
-            return None
-        arr.sort(key=lambda t: t[0])
-        prev = arr[0][1]
-        for i in range(1, len(arr)):
-            curr = arr[i][1]
-            if (prev <= 0 <= curr) or (prev >= 0 >= curr):
-                x0, y0 = arr[i - 1]
-                x1, y1 = arr[i]
-                if (y1 - y0) != 0:
-                    t = -y0 / (y1 - y0)
-                    return float(x0 + t * (x1 - x0))
-                return float(x0)
-            prev = curr
-        # No crossing: pick strike with smallest absolute net
-        best = min(arr, key=lambda t: abs(t[1]))
-        return float(best[0])
-    except Exception:
-        return None
-
-
 # --- GEX trend history (growth above highest call strike) ---
 def _gex_trend_path(symbol: str) -> str:
     return os.path.join("cache", "gex_trend", f"{symbol.upper()}.json")

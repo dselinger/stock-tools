@@ -1,4 +1,8 @@
-from core.cache import cache_key, recompute_flip_from_arrays, recompute_micro_flip_from_arrays
+from datetime import datetime, timezone
+
+from core.cache import cache_key
+from core.demo_data import demo_expiries, demo_gex_result, demo_vanna_result
+from core.gamma_math import classify_gamma_regime, spot_vs_zero_gamma_pct
 from core.web import scanner_max_workers
 
 
@@ -18,17 +22,43 @@ def test_scanner_max_workers_bounds():
     assert scanner_max_workers(2) >= 1
 
 
-def test_recompute_flip_from_arrays():
-    strikes = [100, 101, 102]
-    gnet = [-5, 2, 6]
-    val = recompute_flip_from_arrays(strikes, gnet)
-    assert val is not None
-    assert 100 <= val <= 102
+def test_cache_key_tracks_gamma_schema_inputs():
+    key = cache_key(
+        mode="g",
+        symbol="slv",
+        pct_window=0.2,
+        next_only=False,
+        expiry="2026-03-13",
+        expiry_mode="all",
+        include_0dte=False,
+        calc_version="gamma-v2",
+    )
+
+    assert "SLV" in key
+    assert key.endswith(":0:::gamma-v2")
 
 
-def test_recompute_micro_flip_from_arrays():
-    strikes = [100, 101, 102]
-    gnet = [-2, -1, 3]
-    val = recompute_micro_flip_from_arrays(strikes, gnet)
-    assert val is not None
-    assert 100 <= val <= 102
+def test_gamma_regime_helpers():
+    assert classify_gamma_regime(101.0, 100.0, 10.0) == "Long Gamma"
+    assert classify_gamma_regime(99.0, 100.0, -10.0) == "Short Gamma"
+    assert classify_gamma_regime(100.05, 100.0, 1e-8) == "Gamma Neutral"
+    assert round(spot_vs_zero_gamma_pct(102.0, 100.0), 2) == 2.0
+
+
+def test_demo_expiries_are_sorted_and_upcoming():
+    expiries = demo_expiries("NVDA")
+
+    assert expiries == sorted(expiries)
+    assert len(expiries) >= 3
+    today = datetime.now(timezone.utc).date().isoformat()
+    assert all(expiry >= today for expiry in expiries)
+
+
+def test_demo_payloads_use_current_demo_expiry_list():
+    expiries = demo_expiries("NVDA")
+
+    gex = demo_gex_result("NVDA")
+    vanna = demo_vanna_result("NVDA")
+
+    assert gex["meta"]["expiry"] in expiries
+    assert vanna["meta"]["expiry"] in expiries
