@@ -4,7 +4,7 @@ import asyncio
 import os
 import time
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 import pandas as pd
@@ -19,12 +19,22 @@ from core.cache import (
 from core.demo_data import demo_expiries, demo_gex_result, demo_scanner_row, demo_vanna_result
 from core.gamma_math import (
     canonicalize_gex_payload,
+    derive_gamma_solver_confidence,
+    expiration_scope_expirations,
+    has_next_trading_day_expiration,
+    has_same_day_expiration,
+    is_standard_monthly_expiration,
+    monthly_expiration_dates,
     gamma_solver_cache_token,
     gamma_solver_profile_label,
     normalize_gamma_solver_config,
+    normalize_expiration_scope,
+    next_monthly_expiration,
+    next_trading_day_expiration,
     scanner_scope_expirations,
     spot_vs_zero_gamma_label,
     spot_vs_zero_gamma_pct,
+    term_shape_anchor_expirations,
 )
 from core.web import (
     FALLBACK_FAVS,
@@ -55,11 +65,245 @@ router.include_router(events_router)
 
 DEMO_MODE_DEFAULT = os.getenv("DEMO_MODE", "0") == "1"
 DEMO_MODE_COOKIE = "demo_mode"
+EXPIRY_CACHE_TTL_SEC = max(30, int(os.getenv("EXPIRY_CACHE_TTL_SEC", "300")))
+EXPIRY_LIST_TIMEOUT_SEC = max(8.0, float(os.getenv("EXPIRY_LIST_TIMEOUT_SEC", "25")))
+EXPIRY_LIST_MAX_PAGES = max(8, int(os.getenv("EXPIRY_LIST_MAX_PAGES_PER_UNDERLYING", "48")))
+EXPIRY_LIST_TARGET_COUNT = max(8, int(os.getenv("EXPIRY_LIST_TARGET_COUNT", "24")))
+EXPIRY_LIST_MAX_COUNT = max(8, int(os.getenv("EXPIRY_LIST_MAX_COUNT", "128")))
+_EXPIRY_CACHE: dict[str, dict[str, Any]] = {}
+EXPIRATION_SCOPE_CHOICES = ("0dte", "1dte", "weekly", "monthly", "m1", "m2", "all")
+GEX_CALC_VERSION = "gamma-v5"
 
 
 def _canonicalize_gex_result(payload: dict) -> dict:
     """Keep all GEX views and caches aligned on the same canonical gamma series."""
     return canonicalize_gex_payload(payload)
+
+
+def _today_iso() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def _build_expiry_scope_metadata(expiries: list[str], *, today_iso: str | None = None) -> dict[str, Any]:
+    today_key = today_iso or _today_iso()
+    monthly = monthly_expiration_dates(expiries, today_iso=today_key)
+    scope_support = {
+        "0dte": has_same_day_expiration(expiries, today_iso=today_key),
+        "1dte": has_next_trading_day_expiration(expiries, today_iso=today_key),
+        "weekly": bool(expiration_scope_expirations(expiries, "weekly", today_iso=today_key)),
+        "monthly": bool(monthly),
+        "m1": next_monthly_expiration(expiries, index=1, today_iso=today_key) is not None,
+        "m2": next_monthly_expiration(expiries, index=2, today_iso=today_key) is not None,
+        "all": bool(expiries),
+    }
+    return {
+        "monthly_expirations": monthly,
+        "scope_support": scope_support,
+        "scope_expirations": {
+            scope: expiration_scope_expirations(expiries, scope, today_iso=today_key)
+            for scope in EXPIRATION_SCOPE_CHOICES
+        },
+        "next_trading_day_expiration": next_trading_day_expiration(expiries, today_iso=today_key),
+    }
+
+
+def _resolve_requested_expiration_scope(
+    available_expiries: list[str],
+    *,
+    requested_scope: str,
+    selected_expiry: str | None = None,
+    selected_expirations: list[str] | None = None,
+    remove_0dte: bool = False,
+    today_iso: str | None = None,
+) -> dict[str, Any]:
+    today_key = today_iso or _today_iso()
+    available = [str(exp)[:10] for exp in (available_expiries or []) if exp]
+    scope_key = normalize_expiration_scope(requested_scope, default="selected")
+    explicit_expiry = str(selected_expiry)[:10] if selected_expiry else None
+    manual_set = [str(exp)[:10] for exp in (selected_expirations or []) if exp]
+    manual_set = [exp for exp in manual_set if exp in set(available)]
+    if scope_key == "selected":
+        chosen = explicit_expiry if explicit_expiry in set(available) else (available[0] if available else None)
+        return {
+            "scope": "selected",
+            "expiry_override": chosen,
+            "allowed_expiries": [chosen] if chosen else [],
+            "supported": chosen is not None,
+            "remove_0dte": bool(remove_0dte),
+        }
+    if scope_key == "all":
+        allowed = manual_set if manual_set else list(available)
+    else:
+        allowed = expiration_scope_expirations(available, scope_key, today_iso=today_key)
+    if remove_0dte and scope_key not in {"selected", "0dte"}:
+        allowed = [exp for exp in allowed if exp != today_key]
+    return {
+        "scope": scope_key,
+        "expiry_override": None,
+        "allowed_expiries": allowed,
+        "supported": bool(allowed),
+        "remove_0dte": bool(remove_0dte),
+    }
+
+
+def _apply_expiration_meta(
+    meta: dict[str, Any] | None,
+    *,
+    scope: str,
+    available_expiries: list[str],
+    selected_expirations: list[str],
+    selected_expiry: str | None,
+    remove_0dte: bool,
+) -> dict[str, Any]:
+    clean = dict(meta or {})
+    diagnostics = dict(clean.get("zero_gamma_diagnostics") or {})
+    clean["expiry_mode"] = scope
+    clean["selected_expirations"] = list(selected_expirations)
+    clean["available_expirations"] = list(available_expiries)
+    clean["remove_0dte"] = bool(remove_0dte)
+    clean["monthly_expirations"] = monthly_expiration_dates(available_expiries, today_iso=_today_iso())
+    clean["expiry_is_monthly"] = bool(clean.get("expiry") and is_standard_monthly_expiration(clean.get("expiry")))
+    if scope == "selected":
+        clean["selected_expiry"] = selected_expiry
+    diagnostics["selected_scope"] = scope
+    diagnostics["selected_expiry"] = selected_expiry
+    diagnostics["selected_expiration_set"] = list(selected_expirations)
+    diagnostics["available_expirations"] = list(available_expiries)
+    diagnostics["remove_0dte"] = bool(remove_0dte)
+    clean["zero_gamma_diagnostics"] = diagnostics
+    return clean
+
+
+def _scanner_spot_density(raw: dict[str, Any], spot: float | None) -> float | None:
+    if not isinstance(raw, dict) or spot is None:
+        return None
+    try:
+        spot_value = float(spot)
+    except Exception:
+        return None
+    strikes = [float(value) for value in (raw.get("strikes") or [])]
+    gex_net = [float(value) for value in (raw.get("gex_net") or [])]
+    if not strikes or len(strikes) != len(gex_net):
+        return None
+    total_abs = sum(abs(value) for value in gex_net)
+    if total_abs <= 0:
+        return None
+    local_band = max(abs(spot_value) * 0.02, 1.0)
+    local_abs = sum(
+        abs(gex_net[idx])
+        for idx in range(len(strikes))
+        if abs(strikes[idx] - spot_value) <= local_band
+    )
+    if local_abs <= 0:
+        nearest = sorted(
+            range(len(strikes)),
+            key=lambda idx: (abs(strikes[idx] - spot_value), strikes[idx]),
+        )[:6]
+        local_abs = sum(abs(gex_net[idx]) for idx in nearest)
+    return max(0.0, min(100.0, (local_abs / total_abs) * 100.0))
+
+
+def _term_shape_bias_interpretation(bias: float | None) -> str:
+    if bias is None:
+        return "Unavailable"
+    if bias >= 0.2:
+        return "Front-loaded"
+    if bias <= -0.2:
+        return "Back-loaded"
+    return "Balanced"
+
+
+def _compute_term_shape_bias(anchor_values: dict[str, float | None]) -> float | None:
+    w1 = anchor_values.get("w1")
+    m1 = anchor_values.get("m1")
+    m2 = anchor_values.get("m2")
+    if w1 is not None:
+        back = [value for value in (m1, m2) if value is not None]
+        if not back:
+            return None
+        back_value = sum(back) / len(back)
+        denom = abs(w1) + abs(back_value)
+        if denom <= 0:
+            return None
+        return max(-1.0, min(1.0, (w1 - back_value) / denom))
+    if m1 is not None and m2 is not None:
+        denom = abs(m1) + abs(m2)
+        if denom <= 0:
+            return None
+        return max(-1.0, min(1.0, (m1 - m2) / denom))
+    return None
+
+
+def _empty_term_shape() -> dict[str, Any]:
+    return {
+        "bias": None,
+        "anchors": [
+            {"anchor": "W1", "expiry": None, "value": None, "monthly": False, "applicable": False},
+            {"anchor": "M1", "expiry": None, "value": None, "monthly": True, "applicable": False},
+            {"anchor": "M2", "expiry": None, "value": None, "monthly": True, "applicable": False},
+        ],
+        "interpretation": "Unavailable",
+    }
+
+
+async def _scanner_term_shape(
+    symbol: str,
+    spot: float,
+    pct_window: float,
+    *,
+    available_expiries: list[str],
+    remove_0dte: bool,
+    parent_job_id: Optional[str] = None,
+) -> dict[str, Any]:
+    available = [str(exp)[:10] for exp in (available_expiries or []) if exp]
+    anchors = term_shape_anchor_expirations(available)
+    anchor_rows: list[dict[str, Any]] = []
+    anchor_values: dict[str, float | None] = {"w1": None, "m1": None, "m2": None}
+    for anchor_name in ("w1", "m1", "m2"):
+        expiry = anchors.get(anchor_name)
+        if not expiry:
+            anchor_rows.append(
+                {
+                    "anchor": anchor_name.upper(),
+                    "expiry": None,
+                    "value": None,
+                    "monthly": anchor_name in {"m1", "m2"},
+                    "applicable": False,
+                }
+            )
+            continue
+        summary = await _compute_gex_cached_summary(
+            symbol,
+            spot,
+            pct_window,
+            expiry_key=expiry,
+            expiry_mode="all",
+            next_only=False,
+            remove_0dte=remove_0dte,
+            allowed_expiries=[expiry],
+            label=f"term_shape_{anchor_name}",
+            parent_job_id=parent_job_id,
+        )
+        value = summary.get("net_gex")
+        try:
+            anchor_values[anchor_name] = float(value) if value is not None else None
+        except Exception:
+            anchor_values[anchor_name] = None
+        anchor_rows.append(
+            {
+                "anchor": anchor_name.upper(),
+                "expiry": expiry,
+                "value": anchor_values[anchor_name],
+                "monthly": bool(expiry and is_standard_monthly_expiration(expiry)),
+                "applicable": True,
+            }
+        )
+    bias = _compute_term_shape_bias(anchor_values)
+    return {
+        "bias": bias,
+        "anchors": anchor_rows,
+        "interpretation": _term_shape_bias_interpretation(bias),
+    }
 
 
 def _payload_solver_config(payload: dict | None) -> dict:
@@ -227,8 +471,25 @@ async def api_start(request: Request):
     except Exception:
         pct_window = 0.10
     expiry_sel = payload.get("expiry") or None
-    expiry_mode = (payload.get("expiry_mode") or "selected").strip()
+    expiry_mode = normalize_expiration_scope(payload.get("expiry_mode"), default="selected")
+    selected_expirations = payload.get("selected_expirations")
+    if not isinstance(selected_expirations, list):
+        selected_expirations = None
+    selected_expirations = [str(exp)[:10] for exp in (selected_expirations or []) if exp]
     demo_mode = get_demo_mode(request)
+    available_expiries = demo_expiries(symbol) if demo_mode else await _list_expiry_dates(symbol)
+    resolved_scope = _resolve_requested_expiration_scope(
+        available_expiries,
+        requested_scope=expiry_mode,
+        selected_expiry=expiry_sel,
+        selected_expirations=selected_expirations if expiry_mode == "all" else None,
+        remove_0dte=False,
+    )
+    effective_scope = resolved_scope["scope"]
+    effective_expiry = resolved_scope["expiry_override"]
+    effective_expiries = list(resolved_scope["allowed_expiries"] or [])
+    if not resolved_scope["supported"]:
+        raise HTTPException(400, detail=f"No expirations available for {effective_scope.upper()}")
     # Session: avoid redirect here; set cookie inline if missing
     sid = get_session_id(request)
     set_cookie = False
@@ -244,7 +505,16 @@ async def api_start(request: Request):
         job.progress = 1.0
         job.result = demo_vanna_result(symbol, pct_window)
         try:
-            meta = job.result.get("meta") or {}
+            meta = _apply_expiration_meta(
+                job.result.get("meta") or {},
+                scope=effective_scope,
+                available_expiries=available_expiries,
+                selected_expirations=effective_expiries,
+                selected_expiry=effective_expiry,
+                remove_0dte=False,
+            )
+            if effective_scope == "selected" and effective_expiry:
+                meta["expiry"] = effective_expiry
             meta["job_id"] = job.job_id
             job.result["meta"] = meta
         except Exception:
@@ -262,7 +532,7 @@ async def api_start(request: Request):
             "api",
             "/api/start",
             "request",
-            {"symbol": symbol, "expiry": expiry_sel, "next_only": next_only},
+            {"symbol": symbol, "expiry": effective_expiry, "next_only": next_only, "scope": effective_scope},
         )
     except Exception:
         pass
@@ -271,11 +541,12 @@ async def api_start(request: Request):
         mode="v",
         symbol=symbol,
         pct_window=pct_window,
-        next_only=next_only,
-        expiry=expiry_sel,
+        next_only=(False if effective_expiry else next_only),
+        expiry=effective_expiry,
         weight=(payload.get("weight") or "oi"),
         spot_override=(str(spot_override).strip() if spot_override else None),
-        expiry_mode=expiry_mode,
+        expiry_mode=effective_scope,
+        expiry_filter=",".join(sorted(effective_expiries)),
     )
     # 1) Attach to a running identical job
     running = await job_manager.get_running_by_key(key)
@@ -289,7 +560,19 @@ async def api_start(request: Request):
         job = await job_manager.create(sid)
         job.status = "done"
         job.progress = 1.0
-        job.result = cached
+        job.result = dict(cached or {})
+        if isinstance(job.result.get("meta"), dict):
+            meta = _apply_expiration_meta(
+                job.result.get("meta") or {},
+                scope=effective_scope,
+                available_expiries=available_expiries,
+                selected_expirations=effective_expiries,
+                selected_expiry=effective_expiry,
+                remove_0dte=False,
+            )
+            if effective_scope == "selected" and effective_expiry:
+                meta["expiry"] = effective_expiry
+            job.result["meta"] = meta
         job.log(f"Cache hit (server, ttl={ttl}s) for {symbol}")
         try:
             await event_log.add(
@@ -329,9 +612,10 @@ async def api_start(request: Request):
                     "start",
                     {
                         "symbol": symbol,
-                        "expiry": expiry_sel,
+                        "expiry": effective_expiry,
                         "next_only": next_only,
                         "pct_window": pct_window,
+                        "scope": effective_scope,
                     },
                     status="info",
                 )
@@ -447,11 +731,22 @@ async def api_start(request: Request):
                 symbol,
                 spot,
                 pct_window=pct_window,
-                only_next_expiry=next_only,
-                expiry_override=expiry_sel,
+                only_next_expiry=(False if effective_expiry else next_only),
+                expiry_override=effective_expiry,
                 weight_mode=(payload.get("weight") or "oi"),
-                expiry_mode=expiry_mode,
+                expiry_mode=("selected" if effective_scope == "selected" else "all"),
+                allowed_expiries=(effective_expiries if effective_scope != "selected" else None),
             )
+            meta = _apply_expiration_meta(
+                meta if isinstance(meta, dict) else {},
+                scope=effective_scope,
+                available_expiries=available_expiries,
+                selected_expirations=effective_expiries,
+                selected_expiry=effective_expiry,
+                remove_0dte=False,
+            )
+            if effective_scope == "selected" and effective_expiry:
+                meta["expiry"] = effective_expiry
             if job.cancel_event.is_set():
                 job.status = "cancelled"
                 return
@@ -461,6 +756,7 @@ async def api_start(request: Request):
                     "vanna_net": [],
                     "vanna_calls": [],
                     "vanna_puts": [],
+                    "meta": meta,
                 }
                 job.status = "done"
                 job.progress = 1.0
@@ -515,7 +811,7 @@ async def api_start(request: Request):
                 "vanna_calls": vc,
                 "vanna_puts": vp,
                 "meta": {
-                    "expiry": (meta.get("expiry") if isinstance(meta, dict) else None),
+                    "expiry": meta.get("expiry"),
                     "spot": float(spot),
                     **({"spot_ah": float(spot_ah)} if spot_ah is not None else {}),
                     **({"spot_pm": float(spot_pm)} if spot_pm is not None else {}),
@@ -526,11 +822,12 @@ async def api_start(request: Request):
                         if prev_close_yest is not None
                         else {}
                     ),
-                    **(
-                        {"stats": (meta.get("stats") if isinstance(meta, dict) else None)}
-                        if isinstance(meta, dict) and meta.get("stats")
-                        else {}
-                    ),
+                    **({"stats": meta.get("stats")} if meta.get("stats") else {}),
+                    "expiry_mode": meta.get("expiry_mode"),
+                    "selected_expirations": list(meta.get("selected_expirations") or []),
+                    "available_expirations": list(meta.get("available_expirations") or []),
+                    "monthly_expirations": list(meta.get("monthly_expirations") or []),
+                    "expiry_is_monthly": bool(meta.get("expiry_is_monthly")),
                     "as_of": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     "symbol": symbol,
                     "job_id": job.job_id,
@@ -658,60 +955,88 @@ async def _list_expiry_dates(symbol: str) -> list[str]:
 
     today = datetime.now(timezone.utc).date().isoformat()
     sym = symbol.upper()
-    underlyings = [sym, f"I:{sym}"]
+    cached = _EXPIRY_CACHE.get(sym)
+    if cached:
+        age = time.time() - float(cached.get("ts") or 0.0)
+        if age <= EXPIRY_CACHE_TTL_SEC:
+            return list(cached.get("expiries") or [])
+
+    underlyings = [sym]
+    if sym in {"SPX", "NDX", "RUT", "DJI"}:
+        underlyings = [f"I:{sym}", sym]
     if not sym.endswith("W"):
         underlyings.append(sym + "W")
+    underlyings = list(dict.fromkeys(underlyings))
 
     seen = set()
     out = []
-    async with httpx.AsyncClient() as client:
-        for u in underlyings:
-            try:
-                params = {
-                    "underlying_ticker": u,
-                    "active": "true",
-                    "limit": 1000,
-                    "sort": "expiration_date",
-                    "order": "asc",
-                    "expiration_date.gte": today,
-                }
-                cursor = None
-                loops = 0
-                while True:
-                    loops += 1
-                    q = dict(params)
-                    if cursor:
-                        q["cursor"] = cursor
-                    data = await polygon_get(client, "/v3/reference/options/contracts", q)
-                    results = data.get("results") or []
-                    for c in results:
-                        e = c.get("expiration_date") or c.get("expirationDate") or c.get("exp_date")
-                        if e:
-                            d = str(e)[:10]
-                            if d >= today and d not in seen:
-                                seen.add(d)
-                                out.append(d)
-                    cursor = data.get("next_url_cursor") or data.get("nextCursor")
-                    if not cursor:
-                        try:
-                            const_nu = data.get("next_url")
-                        except Exception:
-                            const_nu = None
-                        if isinstance(const_nu, str) and const_nu:
-                            try:
-                                from urllib.parse import parse_qs, urlparse
+    completed = True
+    try:
+        async with asyncio.timeout(EXPIRY_LIST_TIMEOUT_SEC):
+            async with httpx.AsyncClient() as client:
+                for u in underlyings:
+                    try:
+                        params = {
+                            "underlying_ticker": u,
+                            "active": "true",
+                            "limit": 1000,
+                            "sort": "expiration_date",
+                            "order": "asc",
+                            "expiration_date.gte": today,
+                        }
+                        cursor = None
+                        loops = 0
+                        while True:
+                            loops += 1
+                            q = dict(params)
+                            if cursor:
+                                q["cursor"] = cursor
+                            data = await polygon_get(client, "/v3/reference/options/contracts", q)
+                            results = data.get("results") or []
+                            for c in results:
+                                e = c.get("expiration_date") or c.get("expirationDate") or c.get("exp_date")
+                                if e:
+                                    d = str(e)[:10]
+                                    if d >= today and d not in seen:
+                                        seen.add(d)
+                                        out.append(d)
+                            if len(out) >= EXPIRY_LIST_MAX_COUNT or len(out) >= EXPIRY_LIST_TARGET_COUNT:
+                                break
+                            cursor = data.get("next_url_cursor") or data.get("nextCursor")
+                            if not cursor:
+                                try:
+                                    next_url = data.get("next_url")
+                                except Exception:
+                                    next_url = None
+                                if isinstance(next_url, str) and next_url:
+                                    try:
+                                        from urllib.parse import parse_qs, urlparse
 
-                                qs = parse_qs(urlparse(const_nu).query)
-                                cvals = qs.get("cursor") or []
-                                if cvals:
-                                    cursor = cvals[0]
-                            except Exception:
-                                cursor = None
-                    if not cursor or loops > 25:
+                                        qs = parse_qs(urlparse(next_url).query)
+                                        cvals = qs.get("cursor") or []
+                                        if cvals:
+                                            cursor = cvals[0]
+                                    except Exception:
+                                        cursor = None
+                            if loops >= EXPIRY_LIST_MAX_PAGES:
+                                completed = False
+                            if not cursor or loops >= EXPIRY_LIST_MAX_PAGES:
+                                break
+                    except Exception:
+                        continue
+                    if len(out) >= EXPIRY_LIST_MAX_COUNT or len(out) >= EXPIRY_LIST_TARGET_COUNT:
                         break
-            except Exception:
-                continue
-    return sorted(out)
+    except TimeoutError:
+        completed = False
+
+    if out:
+        sorted_out = sorted(out)[:EXPIRY_LIST_MAX_COUNT]
+        if completed or len(sorted_out) >= EXPIRY_LIST_TARGET_COUNT:
+            _EXPIRY_CACHE[sym] = {"ts": time.time(), "expiries": sorted_out}
+        return sorted_out
+    if cached:
+        return list(cached.get("expiries") or [])
+    return []
 
 
 @router.get("/api/expiries")
@@ -721,9 +1046,22 @@ async def api_list_expiries(request: Request, symbol: str):
     except Exception:
         pass
     if get_demo_mode(request):
-        return JSONResponse({"symbol": symbol.upper(), "expiries": demo_expiries(symbol)})
+        expiries = demo_expiries(symbol)
+        return JSONResponse(
+            {
+                "symbol": symbol.upper(),
+                "expiries": expiries,
+                **_build_expiry_scope_metadata(expiries),
+            }
+        )
     exp = await _list_expiry_dates(symbol)
-    return JSONResponse({"symbol": symbol.upper(), "expiries": exp})
+    return JSONResponse(
+        {
+            "symbol": symbol.upper(),
+            "expiries": exp,
+            **_build_expiry_scope_metadata(exp),
+        }
+    )
 
 
 def _pct_delta(val: float | None, ref: float | None) -> Optional[float]:
@@ -842,7 +1180,7 @@ async def _compute_gex_cached_summary(
         include_0dte=(not remove_0dte),
         expiry_filter=",".join(sorted(allowed_expiries or [])),
         solver_profile=gamma_solver_cache_token(None),
-        calc_version="gamma-v4",
+        calc_version=GEX_CALC_VERSION,
     )
     cached = job_manager.cache_get(key, ttl)
     res: dict
@@ -1131,8 +1469,8 @@ async def _compute_gex_cached_summary(
             float(total_gamma_at_spot) if total_gamma_at_spot is not None else None
         ),
         "zero_gamma": (float(zero_gamma) if zero_gamma is not None else None),
-        "gamma_confidence": (
-            ((res.get("meta") or {}).get("zero_gamma_diagnostics") or {}).get("solver_confidence")
+        "gamma_confidence": derive_gamma_solver_confidence(
+            ((res.get("meta") or {}).get("zero_gamma_diagnostics") or {})
         ),
         "gamma_regime": (res.get("meta") or {}).get("gamma_regime") or "Gamma Regime Unavailable",
         "spot_vs_zero_gamma": (res.get("meta") or {}).get("spot_vs_zero_gamma")
@@ -1165,21 +1503,47 @@ async def _scanner_entry(
         row["error"] = "Spot unavailable"
         return row
     expiries = await _list_expiry_dates(sym)
+    today_iso = _today_iso()
+    scope_key = normalize_expiration_scope(scope, default="all")
+    expiry_meta = _build_expiry_scope_metadata(expiries, today_iso=today_iso)
+    resolved_scope = _resolve_requested_expiration_scope(
+        expiries,
+        requested_scope=scope_key,
+        remove_0dte=remove_0dte,
+        today_iso=today_iso,
+    )
+    scope_expiries = list(resolved_scope["allowed_expiries"] or [])
     row["next_expiry"] = expiries[0] if expiries else None
-    today_iso = datetime.now(timezone.utc).date().isoformat()
-    scope_expiries = scanner_scope_expirations(expiries, scope, today_iso=today_iso)
-    if remove_0dte:
-        scope_expiries = [expiry for expiry in scope_expiries if expiry != today_iso]
-    row["scope"] = scope
+    row["scope"] = scope_key
     row["scope_expiry_count"] = len(scope_expiries)
-    if scope != "all" and not scope_expiries:
+    row["scope_expirations"] = scope_expiries
+    row["resolved_expiration_key"] = ",".join(scope_expiries)
+    row["available_expirations"] = expiries
+    row["monthly_expirations"] = expiry_meta["monthly_expirations"]
+    row["scope_support"] = expiry_meta["scope_support"]
+    row["supported"] = bool(resolved_scope["supported"])
+    row["excluded"] = not bool(resolved_scope["supported"])
+    row["remove_0dte"] = bool(remove_0dte)
+    row["include_0dte"] = bool(not remove_0dte)
+    selected_display_expiry = scope_expiries[0] if len(scope_expiries) == 1 else None
+    row["selected_expiry"] = selected_display_expiry
+    row["selected_expiry_is_monthly"] = bool(
+        selected_display_expiry and is_standard_monthly_expiration(selected_display_expiry)
+    )
+    if not resolved_scope["supported"]:
         row["net_gex"] = None
         row["total_gamma_at_spot"] = None
         row["zero_gamma"] = None
+        row["front_gex_bias"] = None
+        row["term_shape_bias"] = None
+        row["term_shape"] = _empty_term_shape()
+        row["spot_density"] = None
+        row["gamma_confidence"] = None
         row["spot_vs_zero_gamma"] = "No Zero Gamma in tested range"
         row["spot_vs_zero_gamma_pct"] = None
         row["gamma_regime"] = "Gamma Regime Unavailable"
-        row["error"] = f"No expirations available in {scope} horizon"
+        row["error"] = f"No expirations available for {scope_key.upper()}"
+        row["excluded_reason"] = f"unsupported_{scope_key}"
         return row
     try:
         summary = await _compute_gex_cached_summary(
@@ -1191,7 +1555,7 @@ async def _scanner_entry(
             next_only=False,
             remove_0dte=remove_0dte,
             allowed_expiries=scope_expiries if scope_expiries else expiries,
-            label=scope,
+            label=scope_key,
             parent_job_id=parent_job_id,
         )
     except Exception as e:  # noqa: BLE001
@@ -1212,8 +1576,18 @@ async def _scanner_entry(
     row["gamma_regime"] = summary.get("gamma_regime") or "Gamma Regime Unavailable"
     row["message"] = summary.get("meta", {}).get("expiry") if isinstance(summary, dict) else ""
     row["error"] = summary.get("error") if isinstance(summary, dict) else None
-    row["include_0dte"] = bool(not remove_0dte)
-    row["remove_0dte"] = bool(remove_0dte)
+    row["excluded_reason"] = None
+    row["spot_density"] = _scanner_spot_density(summary.get("raw") or {}, price.get("spot"))
+    term_shape = await _scanner_term_shape(
+        sym,
+        float(price["spot"]),
+        pct_window,
+        available_expiries=expiries,
+        remove_0dte=remove_0dte,
+        parent_job_id=parent_job_id,
+    )
+    row["term_shape"] = term_shape
+    row["term_shape_bias"] = term_shape.get("bias")
     return row
 
 
@@ -1224,8 +1598,8 @@ async def api_scanner_scan(request: Request):
         payload = await request.json()
     except Exception:
         payload = {}
-    scope = str(payload.get("scope") or "all").strip().lower()
-    if scope not in {"weekly", "monthly", "all"}:
+    scope = normalize_expiration_scope(payload.get("scope"), default="all")
+    if scope not in EXPIRATION_SCOPE_CHOICES:
         scope = "all"
     remove_0dte = _payload_remove_0dte(payload, default=False)
     symbols_raw = payload.get("symbols") or []
@@ -1312,8 +1686,8 @@ async def api_scanner_start(request: Request):
         payload = await request.json()
     except Exception:
         payload = {}
-    scope = str(payload.get("scope") or "all").strip().lower()
-    if scope not in {"weekly", "monthly", "all"}:
+    scope = normalize_expiration_scope(payload.get("scope"), default="all")
+    if scope not in EXPIRATION_SCOPE_CHOICES:
         scope = "all"
     remove_0dte = _payload_remove_0dte(payload, default=False)
     symbols_raw = payload.get("symbols") or []
@@ -1566,7 +1940,7 @@ async def api_gex_start(request: Request):
     except Exception:
         pct_window = 0.10
     expiry_sel = payload.get("expiry") or None
-    expiry_mode = (payload.get("expiry_mode") or "selected").strip()
+    expiry_mode = normalize_expiration_scope(payload.get("expiry_mode"), default="selected")
     remove_0dte = _payload_remove_0dte(payload, default=False)
     selected_expirations = payload.get("selected_expirations")
     if not isinstance(selected_expirations, list):
@@ -1574,6 +1948,19 @@ async def api_gex_start(request: Request):
     selected_expirations = [str(exp)[:10] for exp in (selected_expirations or []) if exp]
     solver_config = _payload_solver_config(payload)
     demo_mode = get_demo_mode(request)
+    available_expiries = demo_expiries(symbol) if demo_mode else await _list_expiry_dates(symbol)
+    resolved_scope = _resolve_requested_expiration_scope(
+        available_expiries,
+        requested_scope=expiry_mode,
+        selected_expiry=expiry_sel,
+        selected_expirations=selected_expirations if expiry_mode == "all" else None,
+        remove_0dte=remove_0dte,
+    )
+    effective_scope = resolved_scope["scope"]
+    effective_expiry = resolved_scope["expiry_override"]
+    effective_expiries = list(resolved_scope["allowed_expiries"] or [])
+    if not resolved_scope["supported"]:
+        raise HTTPException(400, detail=f"No expirations available for {effective_scope.upper()}")
 
     sid = get_session_id(request)
     set_cookie = False
@@ -1591,13 +1978,22 @@ async def api_gex_start(request: Request):
             demo_gex_result(
                 symbol,
                 pct_window,
-                expiry=expiry_sel,
-                expiry_mode=expiry_mode,
+                expiry=effective_expiry,
+                expiry_mode=effective_scope,
                 include_0dte=(not remove_0dte),
             )
         )
         try:
-            meta = job.result.get("meta") or {}
+            meta = _apply_expiration_meta(
+                job.result.get("meta") or {},
+                scope=effective_scope,
+                available_expiries=available_expiries,
+                selected_expirations=effective_expiries,
+                selected_expiry=effective_expiry,
+                remove_0dte=remove_0dte,
+            )
+            if effective_scope == "selected" and effective_expiry:
+                meta["expiry"] = effective_expiry
             meta["solver_config"] = dict(solver_config)
             meta["solver_profile_label"] = gamma_solver_profile_label(solver_config)
             meta["job_id"] = job.job_id
@@ -1618,22 +2014,22 @@ async def api_gex_start(request: Request):
         mode="g",
         symbol=symbol,
         pct_window=pct_window,
-        next_only=(False if expiry_sel else next_only),
-        expiry=expiry_sel,
+        next_only=(False if effective_expiry else next_only),
+        expiry=effective_expiry,
         weight="",
         spot_override=(str(spot_override).strip() if spot_override else None),
-        expiry_mode=expiry_mode,
+        expiry_mode=effective_scope,
         include_0dte=(not remove_0dte),
-        expiry_filter=",".join(sorted(selected_expirations)),
+        expiry_filter=",".join(sorted(effective_expiries)),
         solver_profile=gamma_solver_cache_token(solver_config),
-        calc_version="gamma-v4",
+        calc_version=GEX_CALC_VERSION,
     )
     try:
         await event_log.add(
             "api",
             "/api/gex/start",
             "request",
-            {"symbol": symbol, "expiry": expiry_sel, "next_only": next_only},
+            {"symbol": symbol, "expiry": effective_expiry, "next_only": next_only, "scope": effective_scope},
         )
     except Exception:
         pass
@@ -1647,6 +2043,18 @@ async def api_gex_start(request: Request):
         job.status = "done"
         job.progress = 1.0
         res = _canonicalize_gex_result(cached)
+        if isinstance(res.get("meta"), dict):
+            meta = _apply_expiration_meta(
+                res.get("meta") or {},
+                scope=effective_scope,
+                available_expiries=available_expiries,
+                selected_expirations=effective_expiries,
+                selected_expiry=effective_expiry,
+                remove_0dte=remove_0dte,
+            )
+            if effective_scope == "selected" and effective_expiry:
+                meta["expiry"] = effective_expiry
+            res["meta"] = meta
         job.result = res
         job.log(f"Cache hit (server, ttl={ttl}s) for {symbol} — GEX")
         try:
@@ -1687,11 +2095,12 @@ async def api_gex_start(request: Request):
                     "start",
                     {
                         "symbol": symbol,
-                        "expiry": expiry_sel,
-                        "next_only": (False if expiry_sel else next_only),
+                        "expiry": effective_expiry,
+                        "next_only": (False if effective_expiry else next_only),
                         "pct_window": pct_window,
                         "remove_0dte": remove_0dte,
-                        "selected_expirations": selected_expirations,
+                        "selected_expirations": effective_expiries,
+                        "scope": effective_scope,
                         "solver_config": solver_config,
                     },
                 status="info",
@@ -1787,19 +2196,26 @@ async def api_gex_start(request: Request):
                 symbol,
                 spot,
                 pct_window=pct_window,
-                only_next_expiry=(False if expiry_sel else next_only),
-                expiry_mode=expiry_mode,
-                expiry_override=expiry_sel,
+                only_next_expiry=(False if effective_expiry else next_only),
+                expiry_mode=("selected" if effective_scope == "selected" else "all"),
+                expiry_override=effective_expiry,
                 include_0dte=(not remove_0dte),
                 remove_0dte=remove_0dte,
-                allowed_expiries=selected_expirations if expiry_mode == "all" else None,
+                allowed_expiries=(effective_expiries if effective_scope != "selected" else None),
                 include_solver_curve=True,
                 solver_config=solver_config,
             )
             t_compute_end = time.time()
-            # When the page is in current-expiration mode, prefer the explicitly selected expiry in the header.
-            if expiry_sel and (expiry_mode in ("selected", "", "current")):
-                meta["expiry"] = expiry_sel
+            meta = _apply_expiration_meta(
+                meta if isinstance(meta, dict) else {},
+                scope=effective_scope,
+                available_expiries=available_expiries,
+                selected_expirations=effective_expiries,
+                selected_expiry=effective_expiry,
+                remove_0dte=remove_0dte,
+            )
+            if effective_scope == "selected" and effective_expiry:
+                meta["expiry"] = effective_expiry
             if job.cancel_event.is_set():
                 job.status = "cancelled"
                 return
@@ -1834,7 +2250,11 @@ async def api_gex_start(request: Request):
                         "zero_gamma_diagnostics": dict(meta.get("zero_gamma_diagnostics") or {}),
                         "include_0dte": bool(not remove_0dte),
                         "remove_0dte": bool(remove_0dte),
-                        "selected_expirations": list(selected_expirations or []),
+                        "expiry_mode": meta.get("expiry_mode"),
+                        "selected_expirations": list(effective_expiries or []),
+                        "available_expirations": list(available_expiries or []),
+                        "monthly_expirations": list(meta.get("monthly_expirations") or []),
+                        "expiry_is_monthly": bool(meta.get("expiry_is_monthly")),
                         "solver_config": dict(meta.get("solver_config") or solver_config),
                         "solver_profile_label": meta.get("solver_profile_label")
                         or gamma_solver_profile_label(solver_config),
@@ -1897,7 +2317,11 @@ async def api_gex_start(request: Request):
                 "zero_gamma_diagnostics": dict(meta.get("zero_gamma_diagnostics") or {}),
                 "include_0dte": bool(not remove_0dte),
                 "remove_0dte": bool(remove_0dte),
-                "selected_expirations": list(selected_expirations or []),
+                "expiry_mode": meta.get("expiry_mode"),
+                "selected_expirations": list(effective_expiries or []),
+                "available_expirations": list(available_expiries or []),
+                "monthly_expirations": list(meta.get("monthly_expirations") or []),
+                "expiry_is_monthly": bool(meta.get("expiry_is_monthly")),
                 "solver_config": dict(meta.get("solver_config") or solver_config),
                 "solver_profile_label": meta.get("solver_profile_label")
                 or gamma_solver_profile_label(solver_config),
@@ -2005,32 +2429,54 @@ async def api_gex_solver_preview(request: Request):
     except Exception:
         pct_window = 0.10
     expiry_sel = payload.get("expiry") or None
-    expiry_mode = (payload.get("expiry_mode") or "selected").strip()
+    expiry_mode = normalize_expiration_scope(payload.get("expiry_mode"), default="selected")
     remove_0dte = _payload_remove_0dte(payload, default=False)
     selected_expirations = payload.get("selected_expirations")
     if not isinstance(selected_expirations, list):
         selected_expirations = None
     selected_expirations = [str(exp)[:10] for exp in (selected_expirations or []) if exp]
     solver_config = _payload_solver_config(payload)
+    available_expiries = await _list_expiry_dates(symbol)
+    resolved_scope = _resolve_requested_expiration_scope(
+        available_expiries,
+        requested_scope=expiry_mode,
+        selected_expiry=expiry_sel,
+        selected_expirations=selected_expirations if expiry_mode == "all" else None,
+        remove_0dte=remove_0dte,
+    )
+    effective_scope = resolved_scope["scope"]
+    effective_expiry = resolved_scope["expiry_override"]
+    effective_expiries = list(resolved_scope["allowed_expiries"] or [])
+    if not resolved_scope["supported"]:
+        raise HTTPException(400, detail=f"No expirations available for {effective_scope.upper()}")
     ttl = int(os.getenv("SERVER_CACHE_TTL_SEC", "300"))
     key = cache_key(
         mode="g",
         symbol=symbol,
         pct_window=pct_window,
         next_only=False,
-        expiry=expiry_sel,
+        expiry=effective_expiry,
         weight="",
         spot_override=(str(spot_override).strip() if spot_override else None),
-        expiry_mode=expiry_mode,
+        expiry_mode=effective_scope,
         include_0dte=(not remove_0dte),
-        expiry_filter=",".join(sorted(selected_expirations)),
+        expiry_filter=",".join(sorted(effective_expiries)),
         solver_profile=gamma_solver_cache_token(solver_config),
-        calc_version="gamma-v4",
+        calc_version=GEX_CALC_VERSION,
     )
     cached = job_manager.cache_get(key, ttl) or disk_cache_get(key, ttl)
     if cached is not None:
         result = _canonicalize_gex_result(cached)
-        meta = result.get("meta") or {}
+        meta = _apply_expiration_meta(
+            result.get("meta") or {},
+            scope=effective_scope,
+            available_expiries=available_expiries,
+            selected_expirations=effective_expiries,
+            selected_expiry=effective_expiry,
+            remove_0dte=remove_0dte,
+        )
+        if effective_scope == "selected" and effective_expiry:
+            meta["expiry"] = effective_expiry
         diagnostics = dict(meta.get("zero_gamma_diagnostics") or {})
         return JSONResponse(
             {
@@ -2066,15 +2512,25 @@ async def api_gex_solver_preview(request: Request):
         symbol,
         float(spot),
         pct_window=pct_window,
-        only_next_expiry=(False if expiry_sel else False),
-        expiry_mode=expiry_mode,
-        expiry_override=expiry_sel,
+        only_next_expiry=(False if effective_expiry else False),
+        expiry_mode=("selected" if effective_scope == "selected" else "all"),
+        expiry_override=effective_expiry,
         include_0dte=(not remove_0dte),
         remove_0dte=remove_0dte,
-        allowed_expiries=selected_expirations if expiry_mode == "all" else None,
+        allowed_expiries=(effective_expiries if effective_scope != "selected" else None),
         include_solver_curve=False,
         solver_config=solver_config,
     )
+    meta = _apply_expiration_meta(
+        meta if isinstance(meta, dict) else {},
+        scope=effective_scope,
+        available_expiries=available_expiries,
+        selected_expirations=effective_expiries,
+        selected_expiry=effective_expiry,
+        remove_0dte=remove_0dte,
+    )
+    if effective_scope == "selected" and effective_expiry:
+        meta["expiry"] = effective_expiry
     diagnostics = dict(meta.get("zero_gamma_diagnostics") or {})
     return JSONResponse(
         {

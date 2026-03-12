@@ -8,24 +8,28 @@
   @media(max-width:960px){.home-grid{grid-template-columns:1fr}}
   .home-card{padding:22px}
   .home-card .card-title{margin-bottom:12px}
-  .home-card .card-subtext{margin-bottom:14px}
   .tool-card .tool-btn{width:100%;text-align:center;font-weight:700}
   .tool-card .tool-btn + .tool-btn{margin-top:10px}
   .tool-card .tool-btn.debug-tool{margin-top:auto}
   .tool-btn.active{background:linear-gradient(180deg,rgba(var(--page-accent-rgb),0.3),rgba(var(--page-accent-rgb),0.2));color:#f8fafc;box-shadow:0 10px 24px rgba(var(--page-accent-rgb),0.24);border-color:rgba(var(--page-accent-rgb),0.36);transform:translateY(-1px);text-shadow:0 1px 1px rgba(2,6,23,0.32)}
-  .options-card{display:flex;flex-direction:column;gap:16px}
-  .options-card .form-row{display:flex;gap:12px;flex-wrap:wrap;margin-top:14px;align-items:center}
-  .options-card .form-row input[type=text]{width:140px}
+  .options-card{display:flex;flex-direction:column;gap:14px}
+  .home-search-row{display:flex;align-items:center;justify-content:flex-start;gap:14px;min-width:0;flex-wrap:wrap}
+  .home-search-primary{display:flex;align-items:center;gap:10px;min-width:0;flex:0 1 auto;flex-wrap:wrap}
+  .home-search-field{display:grid;grid-template-columns:max-content minmax(0,1fr);align-items:center;gap:10px;min-width:0}
+  .home-search-field label{white-space:nowrap}
+  .home-search-field input{min-width:0}
+  .home-search-field--ticker{flex:0 0 148px}
+  .home-search-field--window{flex:0 0 148px}
   .options-card .suffix-input{position:relative;display:inline-flex;align-items:center;width:100px}
   .options-card .suffix-input input{width:100%;padding-right:26px}
   .options-card .suffix-input .suffix{position:absolute;right:8px;top:50%;transform:translateY(-50%);font-size:0.9rem;pointer-events:none}
-  .fav-row{display:flex;flex-wrap:wrap;gap:10px}
-  .home-chip-note{margin-top:6px}
+  .home-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
   .home-footer{margin-top:18px;text-align:center;color:#94a3b8;font-size:0.9rem}
-  .card-section{border-top:1px solid rgba(var(--page-accent-rgb),0.12);padding-top:10px;margin-top:4px}
   .tool-card{height:100%;min-height:240px;display:flex;flex-direction:column}
   .tool-card .muted{margin-top:auto}
   .home-footer{border-top:1px solid rgba(var(--page-accent-rgb),0.08);padding-top:14px}
+  .home-context-strip{margin-top:0}
+  @media(max-width:720px){.home-search-row,.home-search-primary{align-items:stretch}.home-search-row{flex-direction:column}.home-search-field{width:100%;grid-template-columns:84px minmax(0,1fr)}.home-search-field input,.home-actions .btn{width:100%}}
 </style>
 {% endblock %}
 {% block content %}
@@ -33,10 +37,28 @@
   <div class="page-head" style="margin-bottom:12px">
     <div class="head-titles">
       <h1 style="margin:0">Dave's Stock Tools</h1>
-      <div class="head-desc">Pick a tool, search a ticker, or jump to your saved favorites.</div>
     </div>
     <div class="head-actions">
       <button type="button" class="btn secondary" id="demo_toggle_btn">Demo Mode</button>
+    </div>
+  </div>
+
+  <div class="app-context-strip home-context-strip">
+    <div class="app-context-row">
+      <div class="app-context-group">
+        <span class="app-context-label">Tool</span>
+        <span class="app-context-value" id="home_ctx_tool">Search</span>
+      </div>
+      <span class="app-context-sep">•</span>
+      <div class="app-context-group">
+        <span class="app-context-label">Favorites</span>
+        <span class="app-context-value" id="home_ctx_favs">0 saved</span>
+      </div>
+      <span class="app-context-sep">•</span>
+      <div class="app-context-group">
+        <span class="app-context-label">Demo</span>
+        <span class="app-context-value" id="home_ctx_demo">Off</span>
+      </div>
     </div>
   </div>
 
@@ -50,23 +72,30 @@
     <div class="card options-card home-card" id="options_card">
       <div>
         <div class="card-title" id="options_title">Search Options</div>
-        <div class="muted-small card-subtext">Ticker and window size</div>
-        <div class="form-row">
-          <input type="text" id="h_symbol" placeholder="Ticker (e.g. SPX, NVDA)">
-          <div class="suffix-input">
-            <input type="number" id="h_window" class="num" value="10" min="0.01" step="0.5">
-            <span class="suffix">%</span>
+        <div class="home-search-row" style="margin-top:14px">
+          <div class="home-search-primary">
+            <div class="home-search-field home-search-field--ticker">
+              <label class="muted" for="h_symbol">Ticker</label>
+              <input type="text" id="h_symbol" aria-label="Home ticker symbol" style="width:100%">
+            </div>
+            <div class="home-search-field home-search-field--window">
+              <label class="muted" for="h_window">Window</label>
+              <div class="suffix-input">
+                <input type="number" id="h_window" class="num" value="10" min="0.01" step="0.5" aria-label="Home window percentage">
+                <span class="suffix">%</span>
+              </div>
+            </div>
+          </div>
+          <div class="home-actions">
+            <button class="btn primary" type="button" onclick="openFromOptions()" id="open_btn">Open</button>
+            <button class="btn secondary app-icon-btn" type="button" onclick="homeOpenFavoritesModal()" aria-label="Edit favorites">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m12 3 2.7 5.47 6.03.88-4.36 4.25 1.03 6.01L12 16.98 6.6 19.61l1.03-6.01L3.27 9.35l6.03-.88L12 3z"></path>
+              </svg>
+              <span id="home_fav_btn_text">Favorites</span>
+            </button>
           </div>
         </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
-          <button class="btn primary" type="button" onclick="openFromOptions()" id="open_btn">Open</button>
-          <button class="btn secondary" type="button" onclick="addFromSearch()">Add to Favorites</button>
-        </div>
-      </div>
-      <div class="card-section">
-        <div class="card-title" style="margin-bottom:8px">Favorites</div>
-        <div id="fav_list" class="fav-row"></div>
-        <div class="muted-small home-chip-note">Saved tickers mirror the Gamma Scanner list (including window sizes).</div>
       </div>
     </div>
   </div>
@@ -76,6 +105,34 @@
 
 <div id="home_defaults" data-json='{{ favs_json | tojson | safe }}' hidden></div>
 <div id="home_demo_state" data-enabled="{{ 'true' if demo_mode_enabled else 'false' }}" data-default="{{ 'true' if demo_mode_default else 'false' }}" hidden></div>
+<div id="home_favorites_modal" class="app-modal-shell app-modal-backdrop">
+  <div class="card app-modal-card app-modal-panel">
+    <div class="app-modal-header">
+      <div>
+        <div class="card-title">Favorites</div>
+        <div class="muted" style="margin-top:8px">Edit the saved ticker list shared with the Gamma Scanner.</div>
+      </div>
+      <button class="btn secondary" type="button" onclick="homeCloseFavoritesModal()">Close</button>
+    </div>
+    <div class="fav-editor-stack" style="margin-top:16px">
+      <div class="fav-editor-form">
+        <div class="fav-editor-field fav-editor-field--ticker">
+          <label class="muted" for="h_modal_symbol">Ticker</label>
+          <input type="text" id="h_modal_symbol" aria-label="Favorite ticker">
+        </div>
+        <div class="fav-editor-field fav-editor-field--window">
+          <label class="muted" for="h_modal_window">Window</label>
+          <div class="suffix-input">
+            <input type="number" id="h_modal_window" class="num" value="10" min="0.01" step="0.5" aria-label="Favorite window percentage">
+            <span class="suffix">%</span>
+          </div>
+        </div>
+        <button class="btn primary" type="button" onclick="homeAddFavorite()">Add</button>
+      </div>
+      <div id="fav_list" class="fav-editor-list"></div>
+    </div>
+  </div>
+</div>
 <script>
   const SCAN_KEY = 'vanna:scanner';
   const DEFAULT_WIN = 10;
@@ -112,40 +169,106 @@
     try{ localStorage.setItem(SCAN_KEY, JSON.stringify({tickers:favorites})); }catch(e){}
   }
   let favorites = loadFavorites();
+  let activeTool = 'search';
+  function formatFavoriteCount(count){
+    return `${count} saved`;
+  }
+  function updateHomeContext(){
+    const tool = document.getElementById('home_ctx_tool');
+    const favs = document.getElementById('home_ctx_favs');
+    const demo = document.getElementById('home_ctx_demo');
+    const favBtn = document.getElementById('home_fav_btn_text');
+    if(tool) tool.textContent = activeTool === 'search' ? 'Search' : 'Scanner';
+    if(favs) favs.textContent = formatFavoriteCount(favorites.length);
+    if(demo) demo.textContent = demoEnabled ? 'On' : 'Off';
+    if(favBtn) favBtn.textContent = formatFavoriteCount(favorites.length);
+  }
+  function homeOpenFavoritesModal(){
+    const modal = document.getElementById('home_favorites_modal');
+    const symbol = document.getElementById('h_symbol')?.value || '';
+    const windowValue = document.getElementById('h_window')?.value || DEFAULT_WIN;
+    const modalSymbol = document.getElementById('h_modal_symbol');
+    const modalWindow = document.getElementById('h_modal_window');
+    if(modalSymbol) modalSymbol.value = symbol;
+    if(modalWindow) modalWindow.value = windowValue;
+    if(modal) modal.classList.add('open');
+    renderFavorites();
+    setTimeout(() => document.getElementById('h_modal_symbol')?.focus(), 0);
+  }
+  function homeCloseFavoritesModal(){
+    document.getElementById('home_favorites_modal')?.classList.remove('open');
+  }
+  function upsertFavorite(sym, win){
+    if(!sym) return;
+    const nextWin = (Number(win) > 0 ? Number(win) : DEFAULT_WIN);
+    if(!favorites.find(f=>f.symbol===sym)){
+      favorites.push({symbol:sym, window:nextWin});
+    } else {
+      favorites = favorites.map(f=> f.symbol===sym ? {symbol:sym, window:nextWin} : f);
+    }
+    persistFavorites();
+    renderFavorites();
+  }
   function renderFavorites(){
     const wrap = document.getElementById('fav_list');
     if(!wrap) return;
-    if(!favorites.length){ wrap.innerHTML = '<div class="empty-hint">Add favorites from Search.</div>'; return; }
+    if(!favorites.length){
+      wrap.innerHTML = '<div class="fav-editor-empty">No saved favorites yet.</div>';
+      updateHomeContext();
+      return;
+    }
     wrap.innerHTML = favorites.map(f=>{
       const sym = f.symbol;
       const win = Number(f.window)||DEFAULT_WIN;
-      return `<span class="scan-chip"><span><a href="/gexticker/${encodeURIComponent(sym)}?window=${encodeURIComponent(win)}" style="color:inherit;text-decoration:none">${sym}</a></span>
-        <input type="number" value="${win}" min="0.01" step="0.5" style="width:70px;padding:4px;border-radius:6px;border:1px solid #1f2937;background:#0f172a;color:#e5e7eb" onchange="updateFavoriteWindow('${sym}', this.value)">
-        <button title="Remove" onclick="removeFavorite('${sym}')">×</button></span>`;
+      return `<div class="fav-editor-item">
+        <div class="fav-editor-meta">
+          <span class="fav-editor-symbol">${sym}</span>
+        </div>
+        <div class="fav-editor-actions">
+          <div class="suffix-input" style="width:82px">
+            <input type="number" value="${win}" min="0.01" step="0.5" onchange="updateFavoriteWindow('${sym}', this.value)" aria-label="Window for ${sym}">
+            <span class="suffix">%</span>
+          </div>
+          <button class="btn secondary fav-editor-query" type="button" onclick="queryFavorite('${sym}')">Query</button>
+          <button class="btn fav-editor-remove" type="button" aria-label="Remove ${sym}" onclick="removeFavorite('${sym}')">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"></path></svg>
+          </button>
+        </div>
+      </div>`;
     }).join('');
+    updateHomeContext();
   }
   function updateFavoriteWindow(sym, val){
     favorites = favorites.map(t=> t.symbol===sym ? {symbol:sym, window:(Number(val)>0?Number(val):DEFAULT_WIN)} : t);
     persistFavorites();
+    renderFavorites();
   }
   function removeFavorite(sym){
     favorites = favorites.filter(t=> t.symbol!==sym);
     persistFavorites();
     renderFavorites();
   }
+  function queryFavorite(sym){
+    const match = favorites.find(f=>f.symbol===sym);
+    if(!match) return;
+    homeCloseFavoritesModal();
+    window.location.href = '/gexticker/' + encodeURIComponent(match.symbol) + '?window=' + encodeURIComponent(match.window);
+  }
   function addFromSearch(){
     const symEl=document.getElementById('h_symbol');
     const winEl=document.getElementById('h_window');
     const sym=(symEl?.value||'').toUpperCase().trim();
     const win=Number(winEl?.value||DEFAULT_WIN);
+    upsertFavorite(sym, win);
+  }
+  function homeAddFavorite(){
+    const symEl=document.getElementById('h_modal_symbol');
+    const winEl=document.getElementById('h_modal_window');
+    const sym=(symEl?.value||'').toUpperCase().trim();
+    const win=Number(winEl?.value||DEFAULT_WIN);
     if(!sym) return;
-    if(!favorites.find(f=>f.symbol===sym)){
-      favorites.push({symbol:sym, window:(win>0?win:DEFAULT_WIN)});
-    } else {
-      favorites = favorites.map(f=> f.symbol===sym ? {symbol:sym, window:(win>0?win:DEFAULT_WIN)} : f);
-    }
-    persistFavorites();
-    renderFavorites();
+    upsertFavorite(sym, win);
+    if(symEl) symEl.value = '';
   }
   function openSearch(){
     const symEl=document.getElementById('h_symbol');
@@ -160,12 +283,12 @@
     persistFavorites();
     window.location.href = '/scanner';
   }
-  let activeTool = 'search';
   function applyToolState(){
     const title = document.getElementById('options_title');
     const btns=document.querySelectorAll('.tool-btn');
     btns.forEach(b=>{ const isActive=b.dataset.tool===activeTool; b.classList.toggle('active', isActive); });
     if(title) title.textContent = activeTool==='search' ? 'Search Options' : 'Scanner Options';
+    updateHomeContext();
   }
   function setTool(tool){
     activeTool = tool;
@@ -187,6 +310,7 @@
         ? 'Serving bundled sample data. Toggle off to call Massive (Polygon) with your API key.'
         : 'Live mode. Toggle on to use built-in demo data if keys are missing.';
     }
+    updateHomeContext();
   }
   async function toggleDemoMode(){
     const btn = document.getElementById('demo_toggle_btn');
@@ -208,6 +332,12 @@
     const btn = document.getElementById('demo_toggle_btn');
     if(btn) btn.addEventListener('click', toggleDemoMode);
   }catch(e){}
+  document.getElementById('home_favorites_modal')?.addEventListener('click', (ev) => {
+    if(ev.target && ev.target.id === 'home_favorites_modal') homeCloseFavoritesModal();
+  });
+  document.addEventListener('keydown', (ev) => {
+    if(ev.key === 'Escape' && document.getElementById('home_favorites_modal')?.classList.contains('open')) homeCloseFavoritesModal();
+  });
   renderFavorites();
   renderDemoMode();
   applyToolState();

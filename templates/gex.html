@@ -5,22 +5,32 @@
 body{--page-accent:#c97a1f;--page-accent-rgb:201, 122, 31;--page-accent-soft:rgba(201,122,31,0.12);--page-accent-glow:rgba(201,122,31,0.22);--page-accent-ink:#1c1207}
 .gex-compact-card { display:flex; flex-direction:column; gap:12px; }
 .gex-metric-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
-.gex-search-card { gap:8px !important; padding:16px 18px !important; }
-.gex-search-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:14px; }
-.gex-search-primary { display:flex; align-items:end; gap:10px; min-width:0; flex-wrap:wrap; }
-.gex-search-field { display:flex; align-items:center; gap:8px; min-width:0; }
+.gex-top-grid { display:flex; gap:18px; align-items:stretch; flex-wrap:wrap; width:100%; }
+.gex-top-grid > .card { flex:1 1 520px; min-width:360px; }
+.gex-search-card { gap:10px !important; padding:16px 18px !important; }
+.gex-search-row { display:flex; align-items:center; justify-content:flex-start; gap:14px; min-width:0; flex-wrap:wrap; }
+.gex-search-primary { display:flex; align-items:center; gap:10px; min-width:0; flex:0 1 auto; flex-wrap:wrap; }
+.gex-search-field { display:grid; grid-template-columns:max-content minmax(0,1fr); align-items:center; gap:10px; min-width:0; }
 .gex-search-field label { white-space:nowrap; }
 .gex-search-field input { min-width:0; }
 .gex-search-field--ticker { flex:0 0 108px; }
 .gex-search-field--window { flex:0 0 148px; }
-.gex-search-actions { display:flex; align-items:center; gap:10px; min-width:0; justify-content:flex-end; flex-wrap:nowrap; }
-.gex-progress-inline { display:flex; align-items:center; gap:10px; min-width:0; flex:0 1 220px; margin-right:2px; }
-.gex-progress-inline .progress-sm { flex:1 1 160px; min-width:140px; }
+.gex-progress-row { display:flex; align-items:center; gap:12px; min-width:0; flex-wrap:wrap; }
+.gex-progress-inline { display:flex; align-items:center; gap:10px; min-width:0; flex:0 1 360px; max-width:420px; }
+.gex-progress-inline .progress-sm { flex:1 1 220px; min-width:160px; margin-left:0; }
 .gex-progress-pct { min-width:56px; font-variant-numeric:tabular-nums; color:#cbd5e1; white-space:nowrap; }
+.gex-status-text { white-space:nowrap; }
+.gex-progress-actions { display:flex; align-items:center; gap:10px; min-width:0; flex-wrap:wrap; }
+.gex-progress-actions .btn { min-width:88px; }
+.gex-filter-icon-btn { display:inline-flex; align-items:center; justify-content:center; width:46px; min-width:46px !important; padding:10px; }
+.gex-filter-icon-btn svg { width:18px; height:18px; stroke:currentColor; stroke-width:1.8; fill:none; stroke-linecap:round; stroke-linejoin:round; }
 .gex-card-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .gex-settings-btn { display:inline-flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:10px; border:1px solid rgba(var(--page-accent-rgb),0.18); background:rgba(15,23,42,0.92); color:#f8fafc; box-shadow:inset 0 0 0 1px rgba(148,163,184,0.08); cursor:pointer; font-size:22px; line-height:1; font-weight:700; }
 .gex-settings-btn:hover { border-color:rgba(var(--page-accent-rgb),0.3); color:#ffffff; background:rgba(15,23,42,1); }
 .gex-gear-glyph { transform:translateY(-1px); }
+.gex-page-home { display:inline-flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:10px; border:1px solid rgba(var(--page-accent-rgb),0.18); background:rgba(15,23,42,0.92); color:#f8fafc; box-shadow:inset 0 0 0 1px rgba(148,163,184,0.08); text-decoration:none; }
+.gex-page-home:hover { border-color:rgba(var(--page-accent-rgb),0.3); color:#ffffff; background:rgba(15,23,42,1); box-shadow:0 0 0 4px rgba(var(--page-accent-rgb),0.12); }
+.gex-page-home svg { width:20px; height:20px; stroke:currentColor; stroke-width:1.8; fill:none; stroke-linecap:round; stroke-linejoin:round; }
 .gex-compact-summary { margin-top:2px; padding-top:2px; color:#9fb0c6; font-size:0.84rem; line-height:1.35; }
 .gex-context-strip { margin-top:12px; padding:12px 14px; border:1px solid rgba(var(--page-accent-rgb),0.16); border-radius:12px; background:linear-gradient(180deg, rgba(15,23,42,0.78), rgba(15,23,42,0.62)); display:flex; flex-direction:column; gap:10px; box-shadow:inset 0 1px 0 rgba(255,255,255,0.02); }
 .gex-context-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
@@ -33,8 +43,6 @@ body{--page-accent:#c97a1f;--page-accent-rgb:201, 122, 31;--page-accent-soft:rgb
 .gex-inline-stat strong { color:#f8fafc; font-size:0.94rem; font-weight:700; }
 .gex-inline-stat .negative { color:#fca5a5; }
 .gex-inline-stat .positive { color:#86efac; }
-.mini-help { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:999px; border:1px solid #334155; color:#8a98ad; font-size:11px; cursor:help; margin-left:6px; }
-.mini-help:hover { color:#e5e7eb; border-color:#64748b; }
 .solver-preset-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:10px; }
 .solver-preset-btn strong { font-weight:700; }
 .solver-toggle-row { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
@@ -64,31 +72,39 @@ body{--page-accent:#c97a1f;--page-accent-rgb:201, 122, 31;--page-accent-soft:rgb
 .details-note { padding:10px 12px; border-left:3px solid #38bdf8; background:rgba(15,23,42,0.55); border-radius:8px; color:#cbd5e1; }
 @media (max-width: 1200px) {
   .gex-metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .gex-search-row { grid-template-columns:1fr; }
-  .gex-search-actions { justify-content:flex-start; flex-wrap:wrap; }
-  .gex-progress-inline { flex:1 1 240px; }
+}
+@media (max-width: 900px) {
+  .gex-top-grid { flex-direction:column; }
+  .gex-top-grid > .card { min-width:0; }
 }
 @media (max-width: 720px) {
   .gex-metric-grid { grid-template-columns:1fr; }
   .gex-options-modal { padding:14px; }
   .gex-settings-btn { width:42px; height:42px; }
-  .gex-search-row, .gex-search-primary, .gex-search-actions { align-items:stretch; }
-  .gex-search-actions { width:100%; flex-wrap:wrap; justify-content:flex-start; }
+  .gex-search-row, .gex-search-primary, .gex-progress-row, .gex-progress-actions { align-items:stretch; }
+  .gex-search-row { flex-direction:column; }
+  .gex-progress-row { width:100%; }
+  .gex-progress-actions { width:100%; }
   .gex-progress-inline { width:100%; margin-left:0; }
   .gex-progress-inline .progress-sm { flex:1 1 auto; min-width:0; }
-  .gex-search-field { width:100%; }
-  .gex-search-field input, .gex-search-actions .btn { width:100%; }
+  .gex-search-field { width:100%; grid-template-columns:84px minmax(0,1fr); }
+  .gex-search-field input, .gex-progress-actions .btn { width:100%; }
+  .gex-filter-icon-btn { width:100%; min-width:0 !important; }
   .gex-progress-pct { min-width:auto; }
 }
 </style>
 
 <div class="page-head">
   <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <a href='/' class='home-link' aria-label='Home'>&#8962;</a>
+    <a href='/' class='home-link gex-page-home' aria-label='Home'>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 10.5 12 4l8 6.5"></path>
+        <path d="M6.75 9.75V20h10.5V9.75"></path>
+      </svg>
+    </a>
     <div class="head-titles">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <h2 id="gh_symbol" data-symbol="{{ symbol }}" style="margin:0">{{ symbol or 'Ticker' }} — GEX</h2>
-        <span class="head-chip">GEX</span>
       </div>
     </div>
   </div>
@@ -113,7 +129,7 @@ body{--page-accent:#c97a1f;--page-accent-rgb:201, 122, 31;--page-accent-soft:rgb
     </div>
     <span class="gex-context-sep">•</span>
     <div class="gex-context-group">
-      <span class="gex-context-label">Solver<span class="mini-help" title="Solver settings affect Zero Gamma, Total Gamma @ Spot, Gamma Regime, and Gamma Confidence only.">?</span></span>
+      <span class="gex-context-label">Solver</span>
       <span class="gex-context-value" id="g_ctx_solver">Standard · M2 · ±20%</span>
     </div>
   </div>
@@ -130,14 +146,14 @@ body{--page-accent:#c97a1f;--page-accent-rgb:201, 122, 31;--page-accent-soft:rgb
 
 <div id="gex_controls" style="margin-top:12px">
   <form id="gexForm" onsubmit="startGex(event)" class="ticker-form">
-    <div class="options-grid" style="display:flex;gap:18px;align-items:stretch;flex-wrap:wrap;width:100%">
-      <div class="card options-card gex-search-card" style="flex:0.96 1 520px;min-width:320px;display:flex;flex-direction:column">
+    <div class="gex-top-grid">
+      <div class="card options-card gex-search-card" style="display:flex;flex-direction:column">
         <div class="card-title" style="margin:0">Search Options</div>
         <div class="gex-search-row">
           <div class="gex-search-primary">
             <div class="gex-search-field gex-search-field--ticker">
               <label class="muted" for="g_symbol">Ticker</label>
-              <input type="text" id="g_symbol" value="{{ symbol }}" placeholder="SPX, NVDA" required style="width:100%">
+              <input type="text" id="g_symbol" value="{{ symbol }}" required style="width:100%">
             </div>
             <div class="gex-search-field gex-search-field--window">
               <label class="muted" for="g_window">Window</label>
@@ -147,19 +163,27 @@ body{--page-accent:#c97a1f;--page-accent-rgb:201, 122, 31;--page-accent-soft:rgb
               </div>
             </div>
           </div>
-          <div class="gex-search-actions">
-            <div class="gex-progress-inline">
-              <div class="progress-sm"><div class="bar-sm" id="g_bar"></div></div>
-              <span class="gex-progress-pct" id="g_status_pct">0%</span>
-              <span class="muted" id="g_status">Idle</span>
-            </div>
+        </div>
+        <div class="gex-progress-row">
+          <div class="gex-progress-inline">
+            <div class="progress-sm"><div class="bar-sm" id="g_bar"></div></div>
+            <span class="gex-progress-pct" id="g_status_pct">0%</span>
+            <span class="muted gex-status-text" id="g_status">Idle</span>
+          </div>
+          <div class="gex-progress-actions">
             <button class="btn run-btn" id="g_run_btn" type="submit">Run</button>
             <button class="btn stop-btn" id="g_stop_btn" type="button" onclick="stopGex()">Stop</button>
-            <button class="btn secondary" type="button" onclick="gOpenGammaOptions('filters')">Gamma Filters</button>
+            <button class="btn secondary gex-filter-icon-btn" id="g_filters_btn" type="button" onclick="gOpenGammaOptions('filters')" aria-label="Open filters" title="Open filters">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 6h16"></path>
+                <path d="M7 12h10"></path>
+                <path d="M10 18h4"></path>
+              </svg>
+            </button>
           </div>
         </div>
       </div>
-      <div class="card view-card gex-compact-card" style="flex:1.04 1 420px;min-width:340px">
+      <div class="card view-card gex-compact-card">
         <div class="gex-card-head">
           <div class="card-title" style="margin:0">Gamma Details</div>
           <button class="gex-settings-btn" type="button" id="g_options_btn" title="Gamma Options" aria-label="Open Gamma Options" onclick="gOpenGammaOptions()">
@@ -168,19 +192,19 @@ body{--page-accent:#c97a1f;--page-accent-rgb:201, 122, 31;--page-accent-soft:rgb
         </div>
         <div class="gex-metric-grid">
           <div class="meta-tile">
-            <div class="meta-label">Net GEX (Spot-Scaled)<span class="mini-help" title="Signed gamma exposure scaled by spot. This is the headline net gamma number, separate from the internal zero-gamma solver metric.">?</span></div>
+            <div class="meta-label">Net GEX (Spot-Scaled)</div>
             <div class="meta-value" id="gg_net">—</div>
           </div>
           <div class="meta-tile">
-            <div class="meta-label">Zero Gamma<span class="mini-help" title="The spot level where total signed gamma exposure crosses zero under the active solver settings.">?</span></div>
+            <div class="meta-label">Zero Gamma</div>
             <div class="meta-value" id="gg_zero_gamma">—</div>
           </div>
           <div class="meta-tile">
-            <div class="meta-label">Gamma Regime<span class="mini-help" title="Derived from the sign of total gamma at spot under the active solver settings.">?</span></div>
+            <div class="meta-label">Gamma Regime</div>
             <div class="meta-value" id="gg_regime">—</div>
           </div>
           <div class="meta-tile">
-            <div class="meta-label">Gamma Confidence<span class="mini-help" title="Confidence comes from solver convergence across reduced and refined passes. High means the solver was stable; low means settings materially changed the root.">?</span></div>
+            <div class="meta-label">Gamma Confidence</div>
             <div class="meta-value" id="gg_confidence">—</div>
             <div class="meta-subvalue" id="gg_confidence_sub">Solver diagnostics pending</div>
           </div>
@@ -239,7 +263,7 @@ body{--page-accent:#c97a1f;--page-accent-rgb:201, 122, 31;--page-accent-soft:rgb
       <div id="g_solver_advanced_panel" class="solver-advanced-panel" style="display:none">
         <div class="meta-grid">
           <div class="meta-tile">
-            <div class="meta-label">Solver Horizon<span class="mini-help" title="Choose which expirations the solver can use. Standard defaults to M2, roughly 0–45 DTE.">?</span></div>
+            <div class="meta-label">Solver Horizon</div>
             <select id="g_solver_horizon" class="select-input">
               <option value="w1">W1 (0–7 DTE)</option>
               <option value="w2">W2 (0–14 DTE)</option>
@@ -250,7 +274,7 @@ body{--page-accent:#c97a1f;--page-accent-rgb:201, 122, 31;--page-accent-soft:rgb
             </select>
           </div>
           <div class="meta-tile">
-            <div class="meta-label">Strike Band<span class="mini-help" title="Limits the solver to strikes around spot. Wider bands include more tails; narrower bands stay closer to near- and mid-moneyness.">?</span></div>
+            <div class="meta-label">Strike Band</div>
             <select id="g_solver_band" class="select-input">
               <option value="15">±15%</option>
               <option value="20">±20%</option>
@@ -260,14 +284,14 @@ body{--page-accent:#c97a1f;--page-accent-rgb:201, 122, 31;--page-accent-soft:rgb
             </select>
           </div>
           <div class="meta-tile">
-            <div class="meta-label">Remove 0DTE<span class="mini-help" title="Exclude same-day expirations from the solver universe. This only affects the solver metrics, not the page charts.">?</span></div>
+            <div class="meta-label">Remove 0DTE</div>
             <label class="spot-toggle" for="g_solver_remove_0dte">
               <input type="checkbox" id="g_solver_remove_0dte">
               <span>Off by default</span>
             </label>
           </div>
           <div class="meta-tile">
-            <div class="meta-label">Tail Handling<span class="mini-help" title="Controls how much far-out-of-the-money tail exposure survives outside the main strike band.">?</span></div>
+            <div class="meta-label">Tail Handling</div>
             <select id="g_solver_tail_handling" class="select-input">
               <option value="minimal">Minimal</option>
               <option value="moderate">Moderate</option>
@@ -275,7 +299,7 @@ body{--page-accent:#c97a1f;--page-accent-rgb:201, 122, 31;--page-accent-soft:rgb
             </select>
           </div>
           <div class="meta-tile">
-            <div class="meta-label">Refinement Mode<span class="mini-help" title="Controls how aggressively the solver refines around the first detected sign change.">?</span></div>
+            <div class="meta-label">Refinement Mode</div>
             <select id="g_solver_refinement_mode" class="select-input">
               <option value="fast">Fast</option>
               <option value="balanced">Balanced</option>
@@ -307,19 +331,25 @@ body{--page-accent:#c97a1f;--page-accent-rgb:201, 122, 31;--page-accent-soft:rgb
         </div>
         <div class="meta-grid">
           <div class="meta-tile">
-            <div class="meta-label">Chart Scope<span class="mini-help" title="Selected Expiry uses the selected expiry picker here. All Expirations aggregates the filtered expiry set into the page charts.">?</span></div>
+            <div class="meta-label">Chart Scope</div>
             <select id="g_filter_scope" class="select-input">
-              <option value="current">Selected Expiry</option>
+              <option value="selected">Selected Expiry</option>
+              <option value="0dte">0DTE</option>
+              <option value="1dte">1DTE</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="m1">M1</option>
+              <option value="m2">M2</option>
               <option value="all">All Expirations</option>
             </select>
           </div>
           <div class="meta-tile">
-            <div class="meta-label">Selected Expiry<span class="mini-help" title="Used when Chart Scope is set to Selected Expiry. Static charts stay tied to this selection.">?</span></div>
+            <div class="meta-label">Selected Expiry</div>
             <select id="gh_expiry_sel" class="select-input"></select>
             <div class="meta-subvalue">Preserved even when you are currently viewing All Expirations.</div>
           </div>
           <div class="meta-tile">
-            <div class="meta-label">Remove 0DTE<span class="mini-help" title="Exclude same-day expirations from the page chart universe when Chart Scope is All Expirations.">?</span></div>
+            <div class="meta-label">Remove 0DTE</div>
             <label class="spot-toggle" for="g_filter_remove_0dte_toggle" style="margin-bottom:8px">
               <input type="checkbox" id="g_filter_remove_0dte_toggle">
               <span>Exclude 0DTE from charts</span>
@@ -327,7 +357,7 @@ body{--page-accent:#c97a1f;--page-accent-rgb:201, 122, 31;--page-accent-soft:rgb
             <div class="meta-subvalue">Applies to aggregate chart scope only.</div>
           </div>
           <div class="meta-tile">
-            <div class="meta-label">Spot Override<span class="mini-help" title="Override the live spot price for the current run. Useful for scenario testing or debugging off-market snapshots.">?</span></div>
+            <div class="meta-label">Spot Override</div>
             <label class="spot-toggle" for="g_modal_spot_toggle" style="margin-bottom:8px">
               <input type="checkbox" id="g_modal_spot_toggle">
               <span>Enable Override</span>
@@ -381,7 +411,7 @@ let gSolverDraft = null;
 let gSolverPreviewTimer = null;
 let gSolverPreviewSeq = 0;
 let gSolverAdvancedOpen = false;
-let gPageScopeMode = 'current';
+let gPageScopeMode = 'selected';
 let gOptionsTab = 'solver';
 let gToastTimer = null;
 let gSpotOverrideEnabled = false;
@@ -391,6 +421,13 @@ let gPageRemove0dte = false;
 let gRemove0dteFromUrl = false;
 let gLastRequestPayload = null;
 let gLastRunError = null;
+let gExpiriesLoading = false;
+let gExpiriesPromise = null;
+let gExpiriesLoadSeq = 0;
+let gExpiriesLoadingSymbol = '';
+let gMonthlyExpiries = [];
+let gExpiryScopeMap = {};
+let gExpiryScopeSupport = {};
 
 window.addEventListener('error', function(e){ try{ console.error('GEX page script error', e && e.message ? e.message : e); }catch(_e){} });
 window.addEventListener('unhandledrejection', function(e){ try{ console.error('GEX page unhandled rejection', e && e.reason ? e.reason : e); }catch(_e){} });
@@ -426,10 +463,13 @@ function gSyncRunStopState(running) {
   const runBtn = document.getElementById('g_run_btn');
   const stopBtn = document.getElementById('g_stop_btn');
   if (runBtn) {
-    runBtn.classList.toggle('run-inactive', !!running);
-    runBtn.disabled = !!running;
+    const blocked = !!running || !!gExpiriesLoading;
+    runBtn.classList.toggle('run-inactive', blocked);
+    runBtn.disabled = blocked;
     runBtn.setAttribute('aria-pressed', running ? 'false' : 'true');
-    runBtn.title = running ? 'Run is unavailable while the current job is active.' : 'Start a GEX run';
+    runBtn.title = gExpiriesLoading
+      ? 'Loading expirations for this ticker.'
+      : (running ? 'Run is unavailable while the current job is active.' : 'Start a GEX run');
   }
   if (stopBtn) {
     stopBtn.classList.toggle('stop-active', !!running);
@@ -440,7 +480,154 @@ function gSyncRunStopState(running) {
 }
 
 function gCurrentExpiry() {
-  return document.getElementById('gh_expiry_sel')?.value || '';
+  return document.getElementById('gh_expiry_sel')?.value || gAvailableExpiries[0] || '';
+}
+
+function gScopeLabel(scope) {
+  const key = String(scope || '').toLowerCase();
+  const labels = {
+    selected: 'Selected Expiry',
+    current: 'Selected Expiry',
+    '0dte': '0DTE',
+    '1dte': '1DTE',
+    weekly: 'Weekly',
+    monthly: 'Monthly',
+    m1: 'M1',
+    m2: 'M2',
+    all: 'All Expirations'
+  };
+  return labels[key] || key.toUpperCase();
+}
+
+function gIsMonthlyExpiry(expiry) {
+  return Array.isArray(gMonthlyExpiries) && gMonthlyExpiries.includes(String(expiry || '').slice(0, 10));
+}
+
+function gFormatExpiryLabel(expiry) {
+  const text = String(expiry || '').slice(0, 10);
+  if (!text) return '';
+  return gIsMonthlyExpiry(text) ? `${text} (M)` : text;
+}
+
+function gRefreshScopeControls() {
+  const scopeControl = document.getElementById('g_filter_scope');
+  if (!scopeControl) return;
+  const active = gGetActiveScopeMode();
+  const supported = gExpiryScopeSupport || {};
+  Array.from(scopeControl.options || []).forEach((option) => {
+    const value = String(option.value || '').toLowerCase();
+    const baseLabel = gScopeLabel(value);
+    const isSupported = value === 'selected' ? !!gAvailableExpiries.length : (supported[value] !== false);
+    option.textContent = isSupported ? baseLabel : `${baseLabel} — unavailable`;
+    option.disabled = !isSupported;
+  });
+  if (scopeControl.options && scopeControl.querySelector(`option[value="${active}"]`)?.disabled) {
+    scopeControl.value = 'selected';
+    gPageScopeMode = 'selected';
+  } else if (active) {
+    scopeControl.value = active;
+  }
+}
+
+function gExpiryCacheKey(sym) {
+  return 'expiries:v2:' + String(sym || '').trim().toUpperCase();
+}
+
+function gReadCachedExpiries(sym) {
+  try {
+    const ticker = String(sym || '').trim().toUpperCase();
+    const raw = localStorage.getItem(gExpiryCacheKey(sym));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    const ts = Number(parsed && parsed.ts);
+    const expiries = Array.isArray(parsed && parsed.expiries) ? parsed.expiries.map((exp) => String(exp).slice(0, 10)).filter(Boolean) : [];
+    if (!expiries.length) return [];
+    const minExpected = ['SPX','NDX','RUT','DJI'].includes(ticker) ? 6 : 2;
+    if (expiries.length < minExpected) return [];
+    if (Number.isFinite(ts) && (Date.now() - ts) > (6 * 60 * 60 * 1000)) return [];
+    return expiries;
+  } catch(e) {
+    return [];
+  }
+}
+
+function gWriteCachedExpiries(sym, expiries) {
+  try {
+    const ticker = String(sym || '').trim().toUpperCase();
+    const clean = Array.isArray(expiries) ? expiries.map((exp) => String(exp).slice(0, 10)).filter(Boolean) : [];
+    const minExpected = ['SPX','NDX','RUT','DJI'].includes(ticker) ? 6 : 2;
+    if (clean.length < minExpected) return;
+    localStorage.setItem(gExpiryCacheKey(sym), JSON.stringify({ts: Date.now(), expiries: clean}));
+  } catch(e) {}
+}
+
+function gSetExpiryUiLoading(loading, message) {
+  gExpiriesLoading = !!loading;
+  const filtersBtn = document.getElementById('g_filters_btn');
+  if (filtersBtn) {
+    filtersBtn.disabled = !!loading;
+    filtersBtn.title = loading ? 'Waiting for expirations to load.' : 'Adjust page filters and solver settings';
+  }
+  if (!gJobId) {
+    const bar = document.getElementById('g_bar');
+    const pctEl = document.getElementById('g_status_pct');
+    const statusEl = document.getElementById('g_status');
+    if (bar) bar.style.width = '0%';
+    if (pctEl) pctEl.textContent = '0%';
+    if (statusEl) statusEl.textContent = message || (loading ? 'Loading expiries…' : 'Idle');
+  }
+  gSyncRunStopState(!!gJobId);
+}
+
+function gApplyLoadedExpiries(sym, expiries, meta) {
+  const el = document.getElementById('gh_expiry_sel');
+  const exps = Array.isArray(expiries) ? expiries.slice() : [];
+  gAvailableExpiries = exps;
+  gLoadedExpirySymbol = sym;
+  gMonthlyExpiries = Array.isArray(meta && meta.monthly_expirations) ? meta.monthly_expirations.slice() : [];
+  gExpiryScopeMap = Object.assign({}, (meta && meta.scope_expirations) || {});
+  gExpiryScopeSupport = Object.assign({}, (meta && meta.scope_support) || {});
+  const presetFilters = Array.isArray(gExpiryFilterSet)
+    ? gExpiryFilterSet.filter((exp) => exps.includes(exp))
+    : null;
+  const savedFilters = gLoadExpiryFilters(sym, exps);
+  gExpiryFilterSet = presetFilters !== null ? presetFilters : (savedFilters === null ? exps.slice() : savedFilters);
+  if (!gRemove0dteFromUrl) gPageRemove0dte = gLoadRemove0dte(sym);
+  if (el) {
+    el.innerHTML = '';
+    if (!exps.length) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No expiries';
+      opt.disabled = true;
+      el.appendChild(opt);
+    } else {
+      exps.forEach((expiry) => {
+        const opt = document.createElement('option');
+        opt.value = expiry;
+        opt.textContent = gFormatExpiryLabel(expiry);
+        if (gIsMonthlyExpiry(expiry)) opt.title = 'Standard monthly expiration';
+        el.appendChild(opt);
+      });
+    }
+    try {
+      const url = new URL(window.location.href);
+      const qexp = url.searchParams.get('expiry');
+      if (qexp && exps.includes(qexp)) {
+        el.value = qexp;
+      } else {
+        const saved = localStorage.getItem('gex:expiry:' + sym);
+        if (saved && exps.includes(saved)) el.value = saved;
+      }
+    } catch(e) {}
+    if (!el.value && exps.length) el.value = exps[0];
+    el.onchange = () => {
+      try { localStorage.setItem('gex:expiry:' + sym, el.value); } catch(e) {}
+      gApplyScopeState();
+    };
+  }
+  gRefreshScopeControls();
+  gApplyScopeState();
 }
 
 function gCloneFilterSet(value) {
@@ -448,7 +635,7 @@ function gCloneFilterSet(value) {
 }
 
 function gGetActiveScopeMode() {
-  return gPageScopeMode || 'current';
+  return gPageScopeMode || 'selected';
 }
 
 function gGetDraftScopeMode() {
@@ -939,9 +1126,13 @@ function gHandleSolverControlChange() {
 function gRequestedExpirations(options) {
   const scope = options && options.scope ? options.scope : gGetActiveScopeMode();
   const filterSet = options && Object.prototype.hasOwnProperty.call(options, 'filterSet') ? options.filterSet : gExpiryFilterSet;
-  if (scope !== 'all') {
+  if (scope === 'selected' || scope === 'current') {
     const single = gCurrentExpiry();
     return single ? [single] : [];
+  }
+  if (scope !== 'all') {
+    const scoped = (gExpiryScopeMap && gExpiryScopeMap[scope]) || [];
+    return Array.isArray(scoped) ? scoped.slice() : [];
   }
   if (!Array.isArray(gAvailableExpiries) || !gAvailableExpiries.length) return [];
   if (!Array.isArray(filterSet)) return gAvailableExpiries.slice();
@@ -955,7 +1146,7 @@ function gEffectiveSelectedExpirations(options) {
   const remove0dte = options && Object.prototype.hasOwnProperty.call(options, 'remove0dte')
     ? !!options.remove0dte
     : !!gPageRemove0dte;
-  if (!remove0dte || scope !== 'all') return selected;
+  if (!remove0dte || !['all','weekly','monthly','m1','m2'].includes(scope)) return selected;
   const today = gTodayIso();
   return selected.filter((expiry) => expiry !== today);
 }
@@ -971,14 +1162,28 @@ function gRenderFilters() {
   const requested = gRequestedExpirations({ scope, filterSet: gGetDraftFilterSet() });
   const effective = gEffectiveSelectedExpirations({ scope, filterSet: gGetDraftFilterSet(), remove0dte });
   const remove0dteToggle = document.getElementById('g_filter_remove_0dte_toggle');
-  if (remove0dteToggle) remove0dteToggle.checked = !!remove0dte;
+  const canRemove0dte = ['all','weekly','monthly','m1','m2'].includes(scope);
+  if (remove0dteToggle) {
+    remove0dteToggle.checked = !!remove0dte;
+    remove0dteToggle.disabled = !canRemove0dte;
+  }
   if (!rows) return;
   if (count) count.textContent = `${effective.length} selected`;
   if (scope !== 'all') {
-    if (note) note.textContent = 'Selected Expiry scope is active. The expiry picker above controls the chart universe. Aggregate expiry filters remain saved for All Expirations mode.';
-    rows.innerHTML = selectedExpiry
-      ? `<div class="meta-tile"><div class="meta-label">${selectedExpiry}</div><div class="meta-subvalue">Selected expiry only. Static charts follow the selected expiry picker in this panel.</div></div>`
-      : '<div class="muted">No expiration selected.</div>';
+    if (scope === 'selected' || scope === 'current') {
+      if (note) note.textContent = 'Selected Expiry scope is active. The expiry picker above controls the chart universe. Aggregate expiry filters remain saved for All Expirations mode.';
+      rows.innerHTML = selectedExpiry
+        ? `<div class="meta-tile"><div class="meta-label">${gFormatExpiryLabel(selectedExpiry)}</div><div class="meta-subvalue">Selected expiry only. Static charts follow the selected expiry picker in this panel.</div></div>`
+        : '<div class="muted">No expiration selected.</div>';
+      return;
+    }
+    if (note) note.textContent = `${gScopeLabel(scope)} scope is active. Exact expirations are resolved automatically from the loaded chain for this ticker.`;
+    rows.innerHTML = requested.length
+      ? requested.map((expiry) => {
+        const dte = gComputeDte(expiry);
+        return `<div class="meta-tile"><div class="meta-label">${gFormatExpiryLabel(expiry)}</div><div class="meta-subvalue">${dte === null ? 'DTE unavailable' : `${dte} DTE`} · ${gScopeLabel(scope)}</div></div>`;
+      }).join('')
+      : `<div class="muted">${gScopeLabel(scope)} is unavailable for this ticker.</div>`;
     return;
   }
   if (note) note.textContent = 'Choose which expirations feed aggregate page charts and aggregate gamma metrics.';
@@ -990,7 +1195,7 @@ function gRenderFilters() {
       <label class="meta-tile" style="cursor:pointer">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
           <div>
-            <div class="meta-value" style="font-size:0.98rem">${expiry}</div>
+            <div class="meta-value" style="font-size:0.98rem">${gFormatExpiryLabel(expiry)}</div>
             <div class="meta-subvalue">${dte === null ? 'DTE unavailable' : `${dte} DTE`}${removedBy0dte ? ' · removed by 0DTE toggle' : ''}</div>
           </div>
           <input type="checkbox" ${checked ? 'checked' : ''} ${removedBy0dte ? 'disabled' : ''} onchange="gToggleExpiryFilter('${expiry}', this.checked)">
@@ -1291,11 +1496,15 @@ function gSetContextValue(id, text, tone) {
 
 function gUpdateContextBar(meta) {
   const scopeMode = gGetActiveScopeMode();
-  const expiry = (scopeMode === 'all') ? 'All Expirations' : (gCurrentExpiry() || meta.expiry || '—');
-  const remove0dte = scopeMode === 'all'
+  const expiry = (scopeMode === 'all')
+    ? 'All Expirations'
+    : ((scopeMode === 'selected' || scopeMode === 'current')
+      ? gFormatExpiryLabel(gCurrentExpiry() || meta.expiry || '—')
+      : gScopeLabel(scopeMode));
+  const remove0dte = scopeMode === 'all' || ['weekly','monthly','m1','m2'].includes(scopeMode)
     ? `Remove 0DTE ${gPageRemove0dte ? 'On' : 'Off'}`
     : 'Remove 0DTE Selected Only';
-  const showing = [expiry, scopeMode === 'all' ? 'Aggregate Mode' : 'Selected Expiry', remove0dte].join(' · ');
+  const showing = [expiry, scopeMode === 'all' ? 'Aggregate Mode' : gScopeLabel(scopeMode), remove0dte].join(' · ');
   const solverConfig = (meta && meta.solver_config) || gSolverConfig || gDefaultSolverConfig();
   const spot = gParseNum(meta && meta.spot);
   const dayRef = gParseNum(meta && (meta.prev_close_yest != null ? meta.prev_close_yest : meta.prev_close));
@@ -1361,7 +1570,7 @@ function gSwitchToVanna() {
   const win = document.getElementById('g_window').value || '';
   const emode = gGetActiveScopeMode();
   const remove0dte = gPageRemove0dte ? '1' : '0';
-  const effExp = emode === 'all' ? '' : exp;
+  const effExp = emode === 'all' ? '' : (emode === 'selected' ? exp : '');
   const exps = emode === 'all' ? gRequestedExpirations().join(',') : '';
   const qs = new URLSearchParams({symbol:sym, spot:spot, window:win, expiry:effExp, emode, remove0dte, exps, autorun:'1'}).toString();
   window.location.href = `/ticker/${SERVER_SYMBOL || sym || ""}?${qs}`;
@@ -1381,73 +1590,64 @@ function writeClipboard(text) {
 }
 
 async function loadGexExpiries(sym) {
-  const el = document.getElementById('gh_expiry_sel');
-  gLoadedExpirySymbol = sym;
-  try {
-    const r = await fetch(`/api/expiries?symbol=${encodeURIComponent(sym)}`);
-    if (!r.ok) throw new Error('Expiries fetch failed');
-    const j = await r.json();
-    const exps = j.expiries || [];
-    gAvailableExpiries = exps.slice();
-    const presetFilters = Array.isArray(gExpiryFilterSet)
-      ? gExpiryFilterSet.filter((exp) => exps.includes(exp))
-      : null;
-    const savedFilters = gLoadExpiryFilters(sym, exps);
-    gExpiryFilterSet = presetFilters !== null ? presetFilters : (savedFilters === null ? exps.slice() : savedFilters);
-    if (!gRemove0dteFromUrl) gPageRemove0dte = gLoadRemove0dte(sym);
-    if (el) {
-      el.innerHTML = '';
-      if (!exps.length) {
-        const opt = document.createElement('option');
-        opt.value = '';
-        opt.textContent = 'No expiries';
-        opt.disabled = true;
-        el.appendChild(opt);
-      } else {
-        exps.forEach((expiry) => {
-          const opt = document.createElement('option');
-          opt.value = expiry;
-          opt.textContent = expiry;
-          el.appendChild(opt);
-        });
-      }
-      try {
-        const url = new URL(window.location.href);
-        const qexp = url.searchParams.get('expiry');
-        if (qexp && exps.includes(qexp)) {
-          el.value = qexp;
-        } else {
-          const saved = localStorage.getItem('gex:expiry:' + sym);
-          if (saved && exps.includes(saved)) el.value = saved;
-        }
-      } catch(e) {}
-      if (!el.value && exps.length) el.value = exps[0];
-      el.onchange = () => {
-        try { localStorage.setItem('gex:expiry:' + sym, el.value); } catch(e) {}
-        gApplyScopeState();
-      };
-    }
-  } catch(e) {
-    if (el) {
-      el.innerHTML = '';
-      const opt = document.createElement('option');
-      opt.value = '';
-      opt.textContent = 'Failed to load expiries';
-      opt.disabled = true;
-      el.appendChild(opt);
-    }
-    const statusEl = document.getElementById('g_status');
-    if (statusEl && !statusEl.textContent) statusEl.textContent = 'Expiries unavailable';
+  const ticker = String(sym || '').trim().toUpperCase();
+  if (!ticker) return [];
+  if (gExpiriesPromise && gExpiriesLoadingSymbol === ticker) return gExpiriesPromise;
+  const seq = ++gExpiriesLoadSeq;
+  gExpiriesLoadingSymbol = ticker;
+  const cachedExpiries = gReadCachedExpiries(ticker);
+  if ((!Array.isArray(gAvailableExpiries) || !gAvailableExpiries.length) && cachedExpiries.length) {
+    gApplyLoadedExpiries(ticker, cachedExpiries);
   }
-  gApplyScopeState();
+  gSetExpiryUiLoading(true, 'Loading expiries…');
+  gLoadedExpirySymbol = '';
+  gExpiriesPromise = (async () => {
+    try {
+      const r = await fetch(`/api/expiries?symbol=${encodeURIComponent(ticker)}`);
+      if (!r.ok) throw new Error('Expiries fetch failed');
+      const j = await r.json();
+      const exps = Array.isArray(j.expiries) ? j.expiries.map((exp) => String(exp).slice(0, 10)).filter(Boolean) : [];
+      const finalExpiries = exps.length ? exps : cachedExpiries;
+      if (seq !== gExpiriesLoadSeq) return finalExpiries;
+      if (finalExpiries.length) {
+        gWriteCachedExpiries(ticker, finalExpiries);
+        gApplyLoadedExpiries(ticker, finalExpiries, j);
+      } else {
+        gApplyLoadedExpiries(ticker, [], j);
+      }
+      return finalExpiries;
+    } catch(e) {
+      if (seq !== gExpiriesLoadSeq) return cachedExpiries;
+      if (cachedExpiries.length) {
+        gApplyLoadedExpiries(ticker, cachedExpiries, null);
+        return cachedExpiries;
+      }
+      gApplyLoadedExpiries(ticker, [], null);
+      const statusEl = document.getElementById('g_status');
+      if (statusEl) statusEl.textContent = 'Expiries unavailable';
+      return [];
+    } finally {
+      if (seq === gExpiriesLoadSeq) {
+        gExpiriesPromise = null;
+        gExpiriesLoadingSymbol = '';
+        gSetExpiryUiLoading(false, (gAvailableExpiries || []).length ? 'Idle' : 'Expiries unavailable');
+      }
+    }
+  })();
+  return gExpiriesPromise;
 }
 
 async function startGex(ev) {
   ev.preventDefault();
   const sym = (document.getElementById('g_symbol').value || '').trim().toUpperCase();
   if (!sym) return;
-  if (gLoadedExpirySymbol !== sym) {
-    await loadGexExpiries(sym);
+  const expiries = (gLoadedExpirySymbol === sym && Array.isArray(gAvailableExpiries) && gAvailableExpiries.length)
+    ? gAvailableExpiries.slice()
+    : await loadGexExpiries(sym);
+  if (!Array.isArray(expiries) || !expiries.length) {
+    gSetProgress(0, 'Expiries unavailable');
+    gSyncRunStopState(false);
+    return;
   }
   const heading = document.getElementById('gh_symbol');
   if (heading) heading.textContent = (sym || 'Ticker') + ' — GEX';
@@ -1618,16 +1818,17 @@ async function renderGex(data) {
   updateGexHeaderMeta(meta);
   const absMax = Math.max(1e-12, ...gnet.map((v) => Math.abs(v)), ...gc.map((v) => Math.abs(v)), ...gp.map((v) => Math.abs(v)), ...csum.map((v) => Math.abs(v)));
   let factor = 1;
-  let suffix = '';
+  let unitLabel = '';
   for (const scale of [1, 1e3, 1e6, 1e9]) {
     if (absMax / scale < 1000) {
       factor = 1 / scale;
-      if (scale === 1e3) suffix = ' (×1e-3)';
-      if (scale === 1e6) suffix = ' (×1e-6)';
-      if (scale === 1e9) suffix = ' (×1e-9)';
+      if (scale === 1e3) unitLabel = 'Thousands';
+      if (scale === 1e6) unitLabel = 'Millions';
+      if (scale === 1e9) unitLabel = 'Billions';
       break;
     }
   }
+  const axisUnitSuffix = unitLabel ? ` (${unitLabel})` : '';
   const yCalls = gc.map((v) => v * factor);
   const yPuts = gp.map((v) => v * factor);
   const yCumulative = csum.map((v) => v * factor);
@@ -1682,7 +1883,7 @@ async function renderGex(data) {
         hoverlabel,
         legend:{orientation:'h', y:1.08, x:0, bgcolor:'rgba(15,23,42,0.45)', bordercolor:'rgba(148,163,184,0.08)', borderwidth:1, font:{color:'#d5dbe5'}},
         xaxis:{title:{text:'Strike', font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', zeroline:false},
-        yaxis:{title:{text:'GEX' + suffix, font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', autorange:true, zerolinecolor:'rgba(148,163,184,0.14)'},
+        yaxis:{title:{text:'GEX' + axisUnitSuffix, font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', autorange:true, zerolinecolor:'rgba(148,163,184,0.14)'},
         margin:{t:24}
       },
       {displayModeBar:false, responsive:true}
@@ -1697,7 +1898,7 @@ async function renderGex(data) {
         hoverlabel,
         legend:{orientation:'h', y:1.08, x:0, bgcolor:'rgba(15,23,42,0.45)', bordercolor:'rgba(148,163,184,0.08)', borderwidth:1, font:{color:'#d5dbe5'}},
         xaxis:{title:{text:'Strike', font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', zeroline:false},
-        yaxis:{title:{text:'Accumulated Net GEX' + suffix, font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', autorange:true, zerolinecolor:'rgba(148,163,184,0.14)'},
+        yaxis:{title:{text:'Accumulated Net GEX' + axisUnitSuffix, font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', autorange:true, zerolinecolor:'rgba(148,163,184,0.14)'},
         margin:{t:24}
       },
       {displayModeBar:false, responsive:true}
@@ -1767,7 +1968,7 @@ document.addEventListener('DOMContentLoaded', () => {
       gWindowFromUrl = true;
     }
     const qmode = url.searchParams.get('emode');
-    if (qmode) gPageScopeMode = qmode === 'all' ? 'all' : 'current';
+    if (qmode) gPageScopeMode = qmode;
     const qRemove0dte = url.searchParams.get('remove0dte');
     if (qRemove0dte !== null) {
       gPageRemove0dte = qRemove0dte === '1';

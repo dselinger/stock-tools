@@ -1061,6 +1061,7 @@ async def compute_vanna_for_ticker(
     expiry_override: str | None = None,
     weight_mode: str = "oi",
     expiry_mode: str = "",
+    allowed_expiries: list[str] | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     job.status = "running"
     job.progress = 0.03
@@ -1069,6 +1070,9 @@ async def compute_vanna_for_ticker(
     )
 
     lo, hi = spot * (1 - pct_window), spot * (1 + pct_window)
+    requested_expiry_keys = {
+        exp[:10] if isinstance(exp, str) else exp for exp in (allowed_expiries or []) if exp
+    }
     async with httpx.AsyncClient() as client:
         # Fetch across multiple underlying forms to avoid missing weeklies/dailies (e.g., SPXW) or index namespace (I:SPX)
         sym = symbol.upper()
@@ -1139,6 +1143,8 @@ async def compute_vanna_for_ticker(
             if not (lo <= strike <= hi):
                 continue
             expiry = c.get("expiration_date") or c.get("expirationDate") or c.get("exp_date") or ""
+            if requested_expiry_keys and expiry[:10] not in requested_expiry_keys:
+                continue
             # Apply expiry filter precedence
             if fmode == "zero_dte":
                 if today_iso and expiry[:10] != today_iso:
@@ -1258,12 +1264,18 @@ async def compute_vanna_for_ticker(
         if df.empty:
             job.progress = 1.0
             # Determine meta expiry display for empty set
-            disp_exp = next_expiry_key
+            disp_exp = next(iter(requested_expiry_keys)) if len(requested_expiry_keys) == 1 else next_expiry_key
             if fmode == "zero_dte" and today_iso:
                 disp_exp = today_iso
             elif fmode == "exclude_selected" and expiry_override:
                 disp_exp = f"except {expiry_override}"
-            return df, {"expiry": disp_exp, "spot": spot}
+            elif len(requested_expiry_keys) > 1:
+                disp_exp = f"{len(requested_expiry_keys)} expirations"
+            return df, {
+                "expiry": disp_exp,
+                "spot": spot,
+                "included_expirations": sorted(requested_expiry_keys),
+            }
         # If all OI are zero, optionally fall back to unweighted vanna
         try:
             oi_pos_ct = int((df["oi"] > 0).sum())
@@ -1334,16 +1346,19 @@ async def compute_vanna_for_ticker(
 
         job.progress = 1.0
         job.log(f"Completed in {time.time()-t0:.1f}s with {len(pivot)} strikes.")
-        disp_exp = next_expiry_key
+        disp_exp = next(iter(requested_expiry_keys)) if len(requested_expiry_keys) == 1 else next_expiry_key
         if fmode == "zero_dte" and today_iso:
             disp_exp = today_iso
         elif fmode == "exclude_selected" and expiry_override:
             disp_exp = f"except {expiry_override}"
+        elif len(requested_expiry_keys) > 1:
+            disp_exp = f"{len(requested_expiry_keys)} expirations"
         return pivot.reset_index(), {
             "expiry": disp_exp,
             "spot": spot,
             "stats": stats,
             "expiry_mode": fmode or "selected",
+            "included_expirations": sorted(requested_expiry_keys),
         }
 
 
