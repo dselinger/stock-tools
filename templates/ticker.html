@@ -5,18 +5,23 @@
 body{--page-accent:#34c98b;--page-accent-rgb:52, 201, 139;--page-accent-soft:rgba(52,201,139,0.12);--page-accent-glow:rgba(52,201,139,0.22);--page-accent-ink:#07160f}
 .vanna-compact-card { display:flex; flex-direction:column; gap:12px; }
 .vanna-metric-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
-.vanna-search-card { gap:8px !important; padding:16px 18px !important; }
-.vanna-search-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:end; gap:14px; }
-.vanna-search-primary { display:flex; align-items:end; gap:10px; min-width:0; flex-wrap:wrap; }
-.vanna-search-field { display:flex; align-items:center; gap:8px; min-width:0; }
+.vanna-top-grid { display:flex; gap:18px; align-items:stretch; flex-wrap:wrap; width:100%; }
+.vanna-top-grid > .card { flex:1 1 520px; min-width:360px; }
+.vanna-search-card { gap:10px !important; padding:16px 18px !important; }
+.vanna-search-row { display:flex; align-items:center; justify-content:flex-start; gap:14px; min-width:0; flex-wrap:wrap; }
+.vanna-search-primary { display:flex; align-items:center; gap:10px; min-width:0; flex:0 1 auto; flex-wrap:wrap; }
+.vanna-search-field { display:grid; grid-template-columns:max-content minmax(0,1fr); align-items:center; gap:10px; min-width:0; }
 .vanna-search-field label { white-space:nowrap; }
 .vanna-search-field input { min-width:0; }
 .vanna-search-field--ticker { flex:0 0 108px; }
 .vanna-search-field--window { flex:0 0 148px; }
-.vanna-search-actions { display:flex; align-items:center; gap:10px; min-width:0; justify-content:flex-end; flex-wrap:nowrap; }
-.vanna-progress-inline { display:flex; align-items:center; gap:10px; min-width:0; flex:0 1 220px; margin-right:2px; }
-.vanna-progress-inline .progress-sm { flex:1 1 160px; min-width:140px; }
-.vanna-progress-pct { min-width:56px; font-variant-numeric:tabular-nums; color:#cbd5e1; }
+.vanna-search-actions { display:flex; align-items:center; gap:10px; min-width:0; justify-content:flex-start; flex:0 1 auto; flex-wrap:nowrap; margin-left:0; }
+.vanna-search-actions .btn { min-width:88px; }
+.vanna-progress-row { display:flex; align-items:center; gap:12px; min-width:0; }
+.vanna-progress-inline { display:flex; align-items:center; gap:10px; min-width:0; flex:0 1 360px; max-width:420px; }
+.vanna-progress-inline .progress-sm { flex:1 1 220px; min-width:160px; margin-left:0; }
+.vanna-progress-pct { min-width:56px; font-variant-numeric:tabular-nums; color:#cbd5e1; white-space:nowrap; }
+.vanna-status-text { white-space:nowrap; }
 .vanna-card-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .vanna-compact-card .meta-tile { min-height:0; padding:10px 12px; }
 .vanna-compact-card .meta-value { font-size:1rem; }
@@ -24,6 +29,9 @@ body{--page-accent:#34c98b;--page-accent-rgb:52, 201, 139;--page-accent-soft:rgb
 .vanna-settings-btn { display:inline-flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:10px; border:1px solid rgba(var(--page-accent-rgb),0.18); background:rgba(15,23,42,0.92); color:#f8fafc; box-shadow:inset 0 0 0 1px rgba(148,163,184,0.08); cursor:pointer; font-size:22px; line-height:1; font-weight:700; }
 .vanna-settings-btn:hover { border-color:rgba(var(--page-accent-rgb),0.3); color:#ffffff; background:rgba(15,23,42,1); }
 .vanna-gear-glyph { transform:translateY(-1px); }
+.vanna-page-home { display:inline-flex; align-items:center; justify-content:center; width:42px; height:42px; border-radius:10px; border:1px solid rgba(var(--page-accent-rgb),0.18); background:rgba(15,23,42,0.92); color:#f8fafc; box-shadow:inset 0 0 0 1px rgba(148,163,184,0.08); text-decoration:none; }
+.vanna-page-home:hover { border-color:rgba(var(--page-accent-rgb),0.3); color:#ffffff; background:rgba(15,23,42,1); box-shadow:0 0 0 4px rgba(var(--page-accent-rgb),0.12); }
+.vanna-page-home svg { width:20px; height:20px; stroke:currentColor; stroke-width:1.8; fill:none; stroke-linecap:round; stroke-linejoin:round; }
 .vanna-context-strip { margin-top:12px; padding:12px 14px; border:1px solid rgba(var(--page-accent-rgb),0.16); border-radius:12px; background:linear-gradient(180deg, rgba(15,23,42,0.78), rgba(15,23,42,0.62)); display:flex; flex-direction:column; gap:10px; box-shadow:inset 0 1px 0 rgba(255,255,255,0.02); }
 .vanna-context-row { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .vanna-context-group { display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; min-width:0; }
@@ -35,8 +43,6 @@ body{--page-accent:#34c98b;--page-accent-rgb:52, 201, 139;--page-accent-soft:rgb
 .vanna-inline-stat strong { color:#f8fafc; font-size:0.94rem; font-weight:700; }
 .positive { color:#86efac !important; }
 .negative { color:#fca5a5 !important; }
-.mini-help { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:999px; border:1px solid #334155; color:#8a98ad; font-size:11px; cursor:help; margin-left:6px; }
-.mini-help:hover { color:#e5e7eb; border-color:#64748b; }
 .vanna-weight-row { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:8px; }
 .vanna-inline-note { padding:10px 12px; border:1px solid rgba(var(--page-accent-rgb),0.12); border-radius:10px; background:rgba(15,23,42,0.55); color:#cbd5e1; line-height:1.45; }
 .vanna-options-modal { display:none; position:fixed; inset:0; background:rgba(11,15,20,0.72); z-index:10011; padding:24px; align-items:center; justify-content:center; }
@@ -60,19 +66,22 @@ body{--page-accent:#34c98b;--page-accent-rgb:52, 201, 139;--page-accent-soft:rgb
 .details-tag { border:1px solid rgba(var(--page-accent-rgb),0.14); border-radius:999px; padding:4px 8px; font-size:0.8rem; color:#cbd5e1; background:rgba(15,23,42,0.65); }
 @media (max-width: 1200px) {
   .vanna-metric-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
-  .vanna-search-row { grid-template-columns:1fr; }
-  .vanna-search-actions { justify-content:flex-start; flex-wrap:wrap; }
-  .vanna-progress-inline { flex:1 1 240px; }
+}
+@media (max-width: 900px) {
+  .vanna-top-grid { flex-direction:column; }
+  .vanna-top-grid > .card { min-width:0; }
 }
 @media (max-width: 720px) {
   .vanna-metric-grid { grid-template-columns:1fr; }
   .vanna-options-modal { padding:14px; }
   .vanna-settings-btn { width:42px; height:42px; }
   .vanna-search-row, .vanna-search-primary, .vanna-search-actions { align-items:stretch; }
+  .vanna-search-row { flex-direction:column; }
   .vanna-search-actions { width:100%; flex-wrap:wrap; justify-content:flex-start; }
+  .vanna-progress-row { width:100%; }
   .vanna-progress-inline { width:100%; margin-left:0; }
   .vanna-progress-inline .progress-sm { flex:1 1 auto; min-width:0; }
-  .vanna-search-field { width:100%; }
+  .vanna-search-field { width:100%; grid-template-columns:84px minmax(0,1fr); }
   .vanna-search-field input, .vanna-search-actions .btn { width:100%; }
   .vanna-progress-pct { min-width:auto; }
 }
@@ -80,11 +89,15 @@ body{--page-accent:#34c98b;--page-accent-rgb:52, 201, 139;--page-accent-soft:rgb
 
 <div class="page-head">
   <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-    <a href='/' class='home-link' aria-label='Home'>&#8962;</a>
+    <a href='/' class='home-link vanna-page-home' aria-label='Home'>
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M4 10.5 12 4l8 6.5"></path>
+        <path d="M6.75 9.75V20h10.5V9.75"></path>
+      </svg>
+    </a>
     <div class="head-titles">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <h2 id="h_symbol" data-symbol="{{ symbol }}" style="margin:0">{{ symbol or 'Ticker' }} — Vanna</h2>
-        <span class="head-chip">Vanna</span>
       </div>
     </div>
   </div>
@@ -111,7 +124,13 @@ body{--page-accent:#34c98b;--page-accent-rgb:52, 201, 139;--page-accent-soft:rgb
     <div class="vanna-context-group">
       <label class="vanna-context-label" for="expiry_mode">Scope</label>
       <select id="expiry_mode" class="select-input select-sm">
-        <option value="current" selected>Current Expiration</option>
+        <option value="selected" selected>Selected Expiry</option>
+        <option value="0dte">0DTE</option>
+        <option value="1dte">1DTE</option>
+        <option value="weekly">Weekly</option>
+        <option value="monthly">Monthly</option>
+        <option value="m1">M1</option>
+        <option value="m2">M2</option>
         <option value="all">All Expirations</option>
       </select>
     </div>
@@ -137,14 +156,14 @@ body{--page-accent:#34c98b;--page-accent-rgb:52, 201, 139;--page-accent-soft:rgb
 
 <div id="controls" style="margin-top:12px">
   <form id="runForm" onsubmit="startRun(event)" class="ticker-form">
-    <div class="options-grid" style="display:flex;gap:18px;align-items:stretch;flex-wrap:wrap;width:100%">
-      <div class="card options-card vanna-search-card" style="flex:0.84 1 460px;min-width:300px;display:flex;flex-direction:column">
+    <div class="vanna-top-grid">
+      <div class="card options-card vanna-search-card" style="display:flex;flex-direction:column">
         <div class="card-title" style="margin:0">Search Options</div>
         <div class="vanna-search-row">
           <div class="vanna-search-primary">
             <div class="vanna-search-field vanna-search-field--ticker">
               <label class="muted" for="symbol">Ticker</label>
-              <input type="text" id="symbol" value="{{ symbol }}" placeholder="SPX, NVDA" required style="width:100%">
+              <input type="text" id="symbol" value="{{ symbol }}" required style="width:100%">
             </div>
             <div class="vanna-search-field vanna-search-field--window">
               <label class="muted" for="window_input">Window</label>
@@ -155,17 +174,19 @@ body{--page-accent:#34c98b;--page-accent-rgb:52, 201, 139;--page-accent-soft:rgb
             </div>
           </div>
           <div class="vanna-search-actions">
-            <div class="vanna-progress-inline">
-              <div class="progress-sm"><div class="bar-sm" id="bar_sm"></div></div>
-              <span class="vanna-progress-pct" id="bar_pct">0%</span>
-              <span class="muted" id="status">Idle</span>
-            </div>
             <button class="btn run-btn" id="run_btn" type="submit">Run</button>
             <button class="btn stop-btn" id="stop_btn" type="button" onclick="stopRun()">Stop</button>
           </div>
         </div>
+        <div class="vanna-progress-row">
+          <div class="vanna-progress-inline">
+            <div class="progress-sm"><div class="bar-sm" id="bar_sm"></div></div>
+            <span class="vanna-progress-pct" id="bar_pct">0%</span>
+            <span class="muted vanna-status-text" id="status">Idle</span>
+          </div>
+        </div>
       </div>
-      <div class="card view-card vanna-compact-card" style="flex:1.38 1 620px;min-width:440px">
+      <div class="card view-card vanna-compact-card">
         <div class="vanna-card-head">
           <div class="card-title" style="margin:0">Vanna Details</div>
           <button class="vanna-settings-btn" type="button" id="v_options_btn" title="Vanna Options" aria-label="Open Vanna Options" onclick="vOpenOptions()">
@@ -228,10 +249,10 @@ body{--page-accent:#34c98b;--page-accent-rgb:52, 201, 139;--page-accent-soft:rgb
     </div>
 
     <div id="v_options_panel_settings" class="vanna-options-panel">
-      <div class="meta-grid">
-        <div class="meta-tile">
-          <div class="meta-label">Weighting Mode<span class="mini-help" title="Choose how contract-level vanna contributions are weighted before they are aggregated by strike.">?</span></div>
-          <div class="vanna-weight-row">
+        <div class="meta-grid">
+          <div class="meta-tile">
+            <div class="meta-label">Weighting Mode</div>
+            <div class="vanna-weight-row">
             <label class="muted"><input type="radio" name="weight" id="w_oi" value="oi" checked> OI</label>
             <label class="muted"><input type="radio" name="weight" id="w_vol" value="volume"> Volume</label>
             <label class="muted"><input type="radio" name="weight" id="w_eq" value="equal"> Equal</label>
@@ -239,7 +260,7 @@ body{--page-accent:#34c98b;--page-accent-rgb:52, 201, 139;--page-accent-soft:rgb
           <div class="meta-subvalue" style="margin-top:10px">Applies to the next Vanna run.</div>
         </div>
         <div class="meta-tile">
-          <div class="meta-label">Spot Override<span class="mini-help" title="Override the live spot price for the next Vanna run. Useful for scenario testing or debugging off-market snapshots.">?</span></div>
+          <div class="meta-label">Spot Override</div>
           <label class="spot-toggle" for="spot_override_toggle" style="margin-bottom:8px">
             <input type="checkbox" id="spot_override_toggle">
             <span>Enable Override</span>
@@ -291,6 +312,8 @@ let vLastRunError = null;
 let vOptionsTab = 'settings';
 let vToastTimer = null;
 let vChartRenderToken = 0;
+let vMonthlyExpiries = [];
+let vExpiryScopeSupport = {};
 
 function vSyncRunStopState(running) {
   const runBtn = document.getElementById('run_btn');
@@ -397,6 +420,47 @@ function vSetContextValue(id, text, tone) {
   if (tone) el.classList.add(tone);
 }
 
+function vScopeLabel(scope) {
+  const key = String(scope || '').toLowerCase();
+  const labels = {
+    selected: 'Selected Expiry',
+    current: 'Selected Expiry',
+    '0dte': '0DTE',
+    '1dte': '1DTE',
+    weekly: 'Weekly',
+    monthly: 'Monthly',
+    m1: 'M1',
+    m2: 'M2',
+    all: 'All Expirations'
+  };
+  return labels[key] || key.toUpperCase();
+}
+
+function vIsMonthlyExpiry(expiry) {
+  return Array.isArray(vMonthlyExpiries) && vMonthlyExpiries.includes(String(expiry || '').slice(0, 10));
+}
+
+function vFormatExpiryLabel(expiry) {
+  const text = String(expiry || '').slice(0, 10);
+  if (!text) return '';
+  return vIsMonthlyExpiry(text) ? `${text} (M)` : text;
+}
+
+function vRefreshScopeControls() {
+  const scopeEl = document.getElementById('expiry_mode');
+  if (!scopeEl) return;
+  Array.from(scopeEl.options || []).forEach((option) => {
+    const value = String(option.value || '').toLowerCase();
+    const baseLabel = vScopeLabel(value);
+    const supported = value === 'selected' ? true : (vExpiryScopeSupport[value] !== false);
+    option.textContent = supported ? baseLabel : `${baseLabel} — unavailable`;
+    option.disabled = !supported;
+  });
+  if (scopeEl.options && scopeEl.querySelector(`option[value="${scopeEl.value}"]`)?.disabled) {
+    scopeEl.value = 'selected';
+  }
+}
+
 function vUpdateContextBar(meta) {
   const spot = vParseNum(meta && meta.spot);
   const dayRef = vParseNum(meta && (meta.prev_close_yest != null ? meta.prev_close_yest : meta.prev_close));
@@ -427,9 +491,10 @@ function vUpdateContextBar(meta) {
 function applyExpiryModeState() {
   const modeEl = document.getElementById('expiry_mode');
   const expSel = document.getElementById('h_expiry_sel');
-  const isAll = (modeEl && modeEl.value === 'all');
+  const scope = (modeEl && modeEl.value) || 'selected';
+  const isSelected = scope === 'selected' || scope === 'current';
   if (expSel) {
-    expSel.disabled = isAll;
+    expSel.disabled = !isSelected;
     expSel.classList.toggle('muted', expSel.disabled);
   }
   vUpdateContextBar((vLastData && vLastData.meta) || {});
@@ -530,7 +595,7 @@ function vBuildDebugPayload() {
     symbol: (document.getElementById('symbol').value || '').trim().toUpperCase(),
     ui_state: {
       expiry: document.getElementById('h_expiry_sel')?.value || null,
-      expiry_mode: document.getElementById('expiry_mode')?.value || 'current',
+      expiry_mode: document.getElementById('expiry_mode')?.value || 'selected',
       pct_window: (parseFloat(document.getElementById('window_input').value || '10') / 100.0) || 0.10,
       weight_mode: vCurrentWeightMode(),
       weight_label: vWeightLabel(vCurrentWeightMode()),
@@ -619,10 +684,10 @@ async function startRun(ev) {
   vSyncRunStopState(true);
   clearError();
   try {
-    const emode = document.getElementById('expiry_mode')?.value || 'current';
+    const emode = document.getElementById('expiry_mode')?.value || 'selected';
+    const isSelectedScope = emode === 'selected' || emode === 'current';
     const isAllScope = emode === 'all';
-    let sendExpiry = expiry;
-    if (isAllScope) sendExpiry = null;
+    let sendExpiry = isSelectedScope ? expiry : null;
     vLastRequestPayload = {
       generated_at: new Date().toISOString(),
       symbol: sym,
@@ -689,7 +754,7 @@ async function startRun(ev) {
     }
     try {
       const win = document.getElementById('window_input').value || '';
-      const effExpiry = isAllScope ? '' : (expiry || '');
+      const effExpiry = isSelectedScope ? (expiry || '') : '';
       const qs = new URLSearchParams({symbol:sym, spot:spot || '', window:win, expiry:effExpiry, weight, emode}).toString();
       window.history.replaceState(null, '', `/ticker/${SERVER_SYMBOL || sym || ''}?${qs}`);
     } catch(e) {}
@@ -723,8 +788,8 @@ function switchToGex() {
   const spot = (spotToggle && spotToggle.checked) ? document.getElementById('spot_override').value.trim() : '';
   const exp = document.getElementById('h_expiry_sel')?.value || '';
   const win = document.getElementById('window_input').value || '';
-  const emode = document.getElementById('expiry_mode')?.value || 'current';
-  const effExp = (emode === 'all') ? '' : exp;
+  const emode = document.getElementById('expiry_mode')?.value || 'selected';
+  const effExp = (emode === 'selected' || emode === 'current') ? exp : '';
   const qs = new URLSearchParams({symbol:sym, spot, window:win, expiry:effExp, emode, autorun:'1'}).toString();
   window.location.href = `/gexticker/${SERVER_SYMBOL || sym || ""}?${qs}`;
 }
@@ -797,6 +862,8 @@ async function loadExpiries(sym) {
     const r = await fetch(`/api/expiries?symbol=${encodeURIComponent(sym)}`);
     if (!r.ok) return;
     const j = await r.json();
+    vMonthlyExpiries = Array.isArray(j.monthly_expirations) ? j.monthly_expirations.slice() : [];
+    vExpiryScopeSupport = Object.assign({}, j.scope_support || {});
     const el = document.getElementById('h_expiry_sel');
     if (!el) return;
     el.innerHTML = '';
@@ -811,7 +878,8 @@ async function loadExpiries(sym) {
       exps.forEach((expiry) => {
         const o = document.createElement('option');
         o.value = expiry;
-        o.textContent = expiry;
+        o.textContent = vFormatExpiryLabel(expiry);
+        if (vIsMonthlyExpiry(expiry)) o.title = 'Standard monthly expiration';
         el.appendChild(o);
       });
     }
@@ -825,6 +893,7 @@ async function loadExpiries(sym) {
       try { localStorage.setItem('vanna:expiry:' + sym, el.value); } catch(e) {}
       vUpdateContextBar((vLastData && vLastData.meta) || {});
     };
+    vRefreshScopeControls();
     applyExpiryModeState();
   } catch(e) {}
 }
@@ -1169,7 +1238,7 @@ function renderCharts(d) {
   const hoverlabel = {bgcolor:'#0f172a', bordercolor:'rgba(148,163,184,0.22)', font:{color:'#e5e7eb'}};
   const absmax = Math.max(1e-12, ...vnet.map((v) => Math.abs(v)), ...vc.map((v) => Math.abs(v)), ...vp.map((v) => Math.abs(v)));
   let factor = 1;
-  let suffix = '';
+  let unitLabel = '';
   const scales = [1, 1e3, 1e6, 1e9];
   for (const f of scales) {
     if (absmax * f >= 1 && absmax * f < 1000) {
@@ -1177,9 +1246,10 @@ function renderCharts(d) {
       break;
     }
   }
-  if (factor === 1e3) suffix = ' (x1e3)';
-  else if (factor === 1e6) suffix = ' (x1e6)';
-  else if (factor === 1e9) suffix = ' (x1e9)';
+  if (factor === 1e3) unitLabel = 'Thousands';
+  else if (factor === 1e6) unitLabel = 'Millions';
+  else if (factor === 1e9) unitLabel = 'Billions';
+  const axisUnitSuffix = unitLabel ? ` (${unitLabel})` : '';
   const ynet = vnet.map((v) => v * factor);
   const yvc = vc.map((v) => v * factor);
   const yvp = vp.map((v) => v * factor);
@@ -1236,7 +1306,7 @@ function renderCharts(d) {
     hoverlabel,
     legend:{orientation:'h', y:1.08, x:0, bgcolor:'rgba(15,23,42,0.45)', bordercolor:'rgba(148,163,184,0.08)', borderwidth:1, font:{color:'#d5dbe5'}},
     xaxis:{title:{text:'Strike', font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', zeroline:false},
-    yaxis:{title:{text:'Vanna' + suffix, font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', autorange:true, zerolinecolor:'rgba(148,163,184,0.14)'},
+    yaxis:{title:{text:'Vanna' + axisUnitSuffix, font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', autorange:true, zerolinecolor:'rgba(148,163,184,0.14)'},
     margin:{t:24}
   };
   const layoutB = {
@@ -1246,7 +1316,7 @@ function renderCharts(d) {
     hoverlabel,
     legend:{orientation:'h', y:1.08, x:0, bgcolor:'rgba(15,23,42,0.45)', bordercolor:'rgba(148,163,184,0.08)', borderwidth:1, font:{color:'#d5dbe5'}},
     xaxis:{title:{text:'Strike', font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', zeroline:false},
-    yaxis:{title:{text:'Accumulated Net Vanna' + suffix, font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', autorange:true, zerolinecolor:'rgba(148,163,184,0.14)'},
+    yaxis:{title:{text:'Accumulated Net Vanna' + axisUnitSuffix, font:{color:axisColor}}, gridcolor, tickfont:{color:tickColor}, showline:true, linecolor:'rgba(148,163,184,0.16)', autorange:true, zerolinecolor:'rgba(148,163,184,0.14)'},
     margin:{t:24}
   };
   const config = {displayModeBar:false, responsive:true};
@@ -1375,7 +1445,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (el) {
       if (saved) el.value = saved;
       else {
-        el.value = el.value || 'current';
+        el.value = el.value || 'selected';
         localStorage.setItem('vanna:emode', el.value);
       }
       el.addEventListener('change', () => {

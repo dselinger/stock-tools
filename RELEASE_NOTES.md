@@ -1,21 +1,21 @@
 # Release Notes
 
-## v0.2.0 GitHub Release Summary
+## v0.2.1 GitHub Release Summary
 
-`v0.2.0` is the first major cleanup and architecture pass after the initial `v0.1.0` public release. The project now treats Zero Gamma as the canonical gamma workflow, replaces flip-era assumptions with a shared spot-space solver, and aligns the GEX ticker, scanner, and demo mode around the same normalized chain model.
+`v0.2.1` is the release that closes the loop on the new expiration-scope architecture. The GEX ticker, Gamma Scanner, Vanna ticker, demo payloads, and expiry metadata endpoints now resolve `Selected`, `0DTE`, `1DTE`, `Weekly`, `Monthly`, `M1`, `M2`, and `All` through the same shared logic, so the UI and solver operate on the same explicit expiration universe.
 
-This release also redesigns the query engine beneath the UI. Single-expiry GEX runs now prefer bulk expiry snapshots instead of slow per-contract fan-out, aggregate fetches paginate past the provider's first contract page, and cache semantics now include solver/filter inputs so diagnostic work is reproducible. The net result is better parity with external dashboards, faster selected-expiry runs, and fewer hidden mismatches between scanner and ticker output.
+The scanner is the most visible product change in this cut. It now exposes a richer monitoring surface with W1/M1/M2 term-shape analytics, spot-density context, explicit unsupported-scope handling, monthly-expiry tagging, and a persistent context strip that keeps scope, 0DTE handling, ticker count, and freshness visible during a run. GEX and Vanna were updated in parallel so their page-level scope controls and full-details panels explain the same resolved expiration set instead of leaving that mapping implicit.
 
-On the product side, the GEX and Vanna pages received a substantial information-architecture refresh: stronger metric summaries, modernized layouts, advanced options panels, full diagnostic views, and copyable JSON for deeper inspection. Demo mode was refreshed as well so first-time GitHub visitors can open the app, click through populated states, and understand the intended workflow without live credentials.
+Under the hood, this release hardens expiry discovery and cache behavior. Expiry listing now pages contract references more defensively, partial or timed-out results no longer clobber good cached expiration sets, and the active GEX calculation token moves to `gamma-v5` so older cache entries cannot masquerade as the current scope model. Demo mode and screenshots were refreshed at the same time so the repository shows the app as it now behaves.
 
 ## Highlights
 
-- Zero Gamma / GammaFlip modernization centered on a shared spot-space solver
-- Faster and more consistent ticker/scanner query paths using bulk snapshot architecture
-- Corrected net GEX unit handling and clearer separation between headline metrics and solver internals
-- Better diagnostics, solver confidence reporting, and transparent full-details views
-- Modernized GEX/Vanna layouts, cleaner scanner workflow, and refreshed demo screenshots
+- Shared expiration-scope model across GEX, scanner, Vanna, demo mode, and expiry APIs
+- Scanner term-shape, spot-density, exclusion-state, and monthly-expiry context
+- More reliable GEX scope resolution and confidence labeling based on the actual solver universe
+- Safer expiry caching and a new `gamma-v5` calc token for cache separation
+- Refreshed docs and screenshots for the `v0.2.1` release target
 
 ## Short "What Changed" Summary
 
-`v0.2.0` turns the project into a cleaner, more reviewable open-source release: Zero Gamma is now the primary gamma model, query performance is materially better, ticker/scanner outputs are more consistent, diagnostics are much more transparent, and the README/demo flow now represent the current architecture accurately.
+`v0.2.1` takes the `v0.2.0` architecture pass and makes the expiration model coherent end to end: scope resolution is shared, unsupported cases are explicit, scanner context is materially richer, and the docs/demo assets now match the shipped UI.

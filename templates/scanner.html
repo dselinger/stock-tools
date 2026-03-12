@@ -4,105 +4,215 @@
 <style>
   body{--page-accent:#60a5fa;--page-accent-rgb:96, 165, 250;--page-accent-soft:rgba(96,165,250,0.12);--page-accent-glow:rgba(96,165,250,0.22);--page-accent-ink:#08111e}
   .scan-table{width:100%;border-collapse:collapse;}
-  .scan-table th,.scan-table td{padding:8px 10px;border-bottom:1px solid rgba(var(--page-accent-rgb),0.12);text-align:center;font-size:0.92rem;white-space:normal;line-height:1.3;}
-  .scan-table th{color:#e5e7eb;font-weight:700;line-height:1.3;cursor:pointer;}
+  .scan-table th,.scan-table td{padding:10px 10px;border-bottom:1px solid rgba(var(--page-accent-rgb),0.12);text-align:center;font-size:0.92rem;white-space:normal;line-height:1.3;vertical-align:middle;}
+  .scan-table thead th{position:sticky;top:0;background:rgba(8,17,30,0.96);border-bottom:1px solid rgba(var(--page-accent-rgb),0.3);box-shadow:inset 0 -1px 0 rgba(var(--page-accent-rgb),0.12);color:#f8fafc;font-weight:800;letter-spacing:0.02em;cursor:pointer;}
   .scan-table th:first-child,.scan-table td:first-child{text-align:left;}
-  .scan-table th.col-symbol,.scan-table td.col-symbol{min-width:140px;}
+  .scan-table th.col-symbol,.scan-table td.col-symbol{min-width:160px;}
   .scan-table th.col-spot,.scan-table td.col-spot{min-width:76px;}
   .scan-table th.col-zero,.scan-table td.col-zero{min-width:96px;}
   .scan-table th.col-regime,.scan-table td.col-regime{min-width:128px;}
   .scan-table th.col-net,.scan-table td.col-net{min-width:108px;}
+  .scan-table th.col-term,.scan-table td.col-term{min-width:196px;}
+  .scan-table th.col-density,.scan-table td.col-density{min-width:104px;}
   .scan-table th.col-confidence,.scan-table td.col-confidence{min-width:104px;}
   .scan-table tbody tr:nth-child(odd){background:rgba(15,23,42,0.92);}
   .scan-table tbody tr:nth-child(even){background:rgba(15,29,47,0.88);}
   .scan-table tbody tr:hover{background:rgba(var(--page-accent-rgb),0.1);}
+  .scan-table tbody::before{content:'';display:block;height:6px;}
+  .scan-row--excluded{opacity:0.62;}
+  .scan-row--excluded td{color:#94a3b8;}
+  .scan-row--excluded td:first-child{box-shadow:inset 3px 0 0 rgba(248,113,113,0.86);}
+  .scan-symbol-cell{display:flex;flex-direction:column;gap:4px;min-width:0;}
+  .scan-symbol-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:#94a3b8;font-size:0.78rem;}
+  .scan-monthly-chip{display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;border:1px solid rgba(250,204,21,0.18);background:rgba(250,204,21,0.08);color:#fcd34d;font-size:0.72rem;letter-spacing:0.04em;text-transform:uppercase;}
+  .scan-muted-value{color:#64748b;}
   .scan-badge{padding:4px 8px;border-radius:10px;font-weight:600;font-size:0.9rem;display:inline-block;}
   .scan-badge.long{background:#0f2f22;color:#34d399;}
   .scan-badge.short{background:#2f1020;color:#f87171;}
   .scan-badge.neutral{background:#111827;color:#9ca3af;border:1px solid rgba(var(--page-accent-rgb),0.14);}
   .scan-wrap{display:flex;flex-direction:column;gap:12px}
-  .scan-controls{padding:16px 18px}
-  .scan-top{display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap}
-  .scan-top-left{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
-  .scan-top-left .field-group{display:flex;flex-direction:column;gap:6px}
-  .scan-top-left .field-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-  .scan-top-left input[type=text]{width:140px}
-  .scan-top-left .suffix-input{position:relative;display:inline-flex;align-items:center}
-  .scan-top-left .suffix-input input{padding-right:26px;width:100px}
-  .scan-top-left .suffix-input .suffix{position:absolute;right:8px;color:#94a3b8;font-size:0.9rem}
-  .scan-actions{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .scan-controls{padding:14px 18px}
+  .scan-toolbar{display:flex;gap:14px;align-items:flex-end;justify-content:space-between;flex-wrap:wrap}
+  .scan-toolbar-primary{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;min-width:0}
+  .scan-toolbar-status{margin-left:auto;display:flex;align-items:flex-end;gap:14px;flex-wrap:nowrap;min-width:0;flex:1 1 620px;justify-content:flex-end}
+  .scan-compact-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+  .scan-compact-field .select-input{min-width:132px}
+  .scan-toggle-field{display:flex;align-items:center;min-height:40px}
+  .scan-toggle-chip{display:inline-flex;align-items:center;gap:12px;min-height:40px;padding:0 2px;color:#cbd5e1;cursor:pointer;position:relative}
+  .scan-toggle-chip input{position:absolute;opacity:0;pointer-events:none}
+  .scan-toggle-chip-text{white-space:nowrap}
+  .scan-toggle-switch{position:relative;display:inline-flex;align-items:center;flex:0 0 auto;width:46px;height:26px;border-radius:999px;background:rgba(148,163,184,0.26);border:1px solid rgba(var(--page-accent-rgb),0.14);box-shadow:inset 0 1px 2px rgba(2,6,23,0.28);transition:background .16s ease,border-color .16s ease,box-shadow .16s ease}
+  .scan-toggle-switch::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#f8fafc;box-shadow:0 2px 8px rgba(2,6,23,0.28);transition:left .16s ease,transform .16s ease}
+  .scan-toggle-chip:hover .scan-toggle-switch{border-color:rgba(var(--page-accent-rgb),0.24)}
+  .scan-toggle-chip--on .scan-toggle-switch{background:linear-gradient(180deg,rgba(var(--page-accent-rgb),0.92),rgba(var(--page-accent-rgb),0.78));border-color:rgba(var(--page-accent-rgb),0.34);box-shadow:0 0 0 3px rgba(var(--page-accent-rgb),0.12),inset 0 1px 0 rgba(255,255,255,0.08)}
+  .scan-toggle-chip--on .scan-toggle-switch::after{left:22px}
+  .scan-toggle-chip--on .scan-toggle-chip-text{color:#f8fafc}
+  .scan-favorites-btn{min-width:156px;justify-content:flex-start}
+  .scan-favorites-btn-count{font-weight:700;color:#f8fafc}
+  .scan-progress-inline{display:flex;align-items:center;gap:12px;min-width:0;flex:1 1 460px;max-width:620px}
+  .scan-progress-inline .progress-sm{flex:1 1 240px;min-width:180px;margin-left:0}
+  .scan-progress-pct{min-width:48px;font-variant-numeric:tabular-nums;color:#cbd5e1;white-space:nowrap}
+  .scan-state-text{white-space:nowrap;min-width:220px;overflow:hidden;text-overflow:ellipsis}
   .scan-runstop{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .table-note{color:#9ca3af;font-size:0.85rem;margin-top:6px;}
-  .chip-scroll{margin-top:10px}
-  @media (max-width:1024px){.scan-top{flex-direction:column;align-items:flex-start;}.scan-actions{width:100%;justify-content:flex-end;}}
+  .scan-legend{margin-top:12px;padding-top:10px;border-top:1px solid rgba(var(--page-accent-rgb),0.14);color:#94a3b8;font-size:0.84rem;}
+  .scan-legend strong{color:#f8fafc;font-weight:700;}
+  .scan-table-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+  .scan-context-strip{margin-top:12px}
+  .scan-favorites-modal .card-title{margin:0}
+  .scan-page-home{display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:10px;border:1px solid rgba(var(--page-accent-rgb),0.18);background:rgba(15,23,42,0.92);color:#f8fafc;box-shadow:inset 0 0 0 1px rgba(148,163,184,0.08);text-decoration:none}
+  .scan-page-home:hover{border-color:rgba(var(--page-accent-rgb),0.3);color:#ffffff;background:rgba(15,23,42,1);box-shadow:0 0 0 4px rgba(var(--page-accent-rgb),0.12)}
+  .scan-page-home svg{width:20px;height:20px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
+  .term-shape-cell{position:relative;}
+  .term-shape-wrap{display:inline-flex;position:relative;max-width:100%;}
+  .term-shape-trigger{display:inline-flex;align-items:center;gap:8px;padding:4px 6px;border-radius:10px;border:1px solid transparent;background:transparent;color:inherit;cursor:pointer;max-width:100%;transition:border-color 0.16s ease,background 0.16s ease,box-shadow 0.16s ease}
+  .term-shape-trigger:hover,.term-shape-cell.term-shape-cell--open .term-shape-trigger,.term-shape-trigger:focus-visible{background:rgba(var(--page-accent-rgb),0.08);border-color:rgba(var(--page-accent-rgb),0.16);box-shadow:0 0 0 1px rgba(var(--page-accent-rgb),0.06);outline:none}
+  .term-shape-svg{width:68px;height:26px;display:block;flex:0 0 auto}
+  .term-shape-bias{font-variant-numeric:tabular-nums;white-space:nowrap;font-weight:700;color:#e2e8f0}
+  .term-shape-popover{position:absolute;left:0;top:calc(100% + 8px);z-index:24;min-width:224px;max-width:260px;padding:10px 12px;border-radius:12px;border:1px solid rgba(var(--page-accent-rgb),0.22);background:linear-gradient(180deg,rgba(10,15,28,0.98),rgba(12,18,32,0.96));box-shadow:0 18px 36px rgba(2,6,23,0.42),0 0 0 1px rgba(var(--page-accent-rgb),0.08);text-align:left;opacity:0;pointer-events:none;transform:translateY(4px);transition:opacity 0.14s ease,transform 0.14s ease}
+  .term-shape-popover::before{content:'';position:absolute;top:-6px;left:20px;width:12px;height:12px;transform:rotate(45deg);background:rgba(10,15,28,0.98);border-left:1px solid rgba(var(--page-accent-rgb),0.22);border-top:1px solid rgba(var(--page-accent-rgb),0.22)}
+  .term-shape-cell:hover .term-shape-popover,.term-shape-cell:focus-within .term-shape-popover,.term-shape-cell.term-shape-cell--open .term-shape-popover{opacity:1;pointer-events:auto;transform:translateY(0)}
+  .term-shape-title{font-weight:700;color:#f8fafc;margin-bottom:6px}
+  .term-shape-line{display:flex;justify-content:space-between;gap:10px;color:#cbd5e1;font-size:0.82rem;padding:2px 0}
+  .term-shape-line-label{color:#94a3b8;white-space:nowrap}
+  .term-shape-line-value{font-variant-numeric:tabular-nums;text-align:right}
+  .term-shape-line-value.na{color:#64748b}
+  .term-shape-line-value.pos{color:#86efac}
+  .term-shape-line-value.neg{color:#fca5a5}
+  .term-shape-footer{margin-top:6px;padding-top:6px;border-top:1px solid rgba(var(--page-accent-rgb),0.12);display:flex;justify-content:space-between;gap:10px;font-size:0.8rem;color:#94a3b8}
+  @media (hover:none){.term-shape-cell:hover .term-shape-popover{opacity:0;pointer-events:none;transform:translateY(4px)}}
+  @media (max-width:1024px){.scan-toolbar{flex-direction:column;align-items:flex-start;}.scan-toolbar-status{width:100%;margin-left:0;justify-content:space-between;flex-wrap:wrap;}.scan-progress-inline{max-width:none;flex:1 1 420px}}
+  @media (max-width:720px){.scan-toolbar-primary,.scan-toolbar-status{width:100%;align-items:stretch;}.scan-progress-inline{width:100%;max-width:none;flex-wrap:wrap}.scan-progress-inline .progress-sm{min-width:0}.scan-state-text{min-width:0;white-space:normal}.scan-compact-field,.scan-runstop,.scan-runstop .btn,.scan-favorites-btn{width:100%}}
   @media (max-width:800px){.scan-table{font-size:0.85rem;}.scan-table th,.scan-table td{padding:8px;}}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="page-head">
-  <a href="/" class="home-link" aria-label="Home">&#8962;</a>
+  <a href="/" class="home-link scan-page-home" aria-label="Home">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M4 10.5 12 4l8 6.5"></path>
+      <path d="M6.75 9.75V20h10.5V9.75"></path>
+    </svg>
+  </a>
   <div class="head-titles">
     <h1 style="margin:0">Gamma Scanner</h1>
-    <div class="muted head-desc">Scanner view for net gamma exposure and zero gamma by scope.</div>
+  </div>
+</div>
+
+<div id="scanner_context" class="app-context-strip scan-context-strip">
+  <div class="app-context-row">
+    <div class="app-context-group">
+      <span class="app-context-label">Scope</span>
+      <span class="app-context-value" id="sc_ctx_scope">ALL</span>
+    </div>
+    <span class="app-context-sep">•</span>
+    <div class="app-context-group">
+      <span class="app-context-label">0DTE</span>
+      <span class="app-context-value" id="sc_ctx_dte">Included</span>
+    </div>
+    <span class="app-context-sep">•</span>
+    <div class="app-context-group">
+      <span class="app-context-label">Tickers</span>
+      <span class="app-context-value" id="sc_ctx_tickers">0 saved</span>
+    </div>
+    <span class="app-context-sep">•</span>
+    <div class="app-context-group">
+      <span class="app-context-label">Status</span>
+      <span class="app-context-value" id="sc_ctx_status">Idle</span>
+    </div>
+  </div>
+  <div class="app-context-row app-context-secondary">
+    <span class="app-inline-stat"><span class="app-context-label">Updated</span><strong id="sc_ctx_updated">—</strong></span>
+    <span class="app-context-sep">•</span>
+    <span class="app-inline-stat"><span class="app-context-label">Load</span><strong id="sc_ctx_load">—</strong></span>
   </div>
 </div>
 
 <div class="card scan-controls" style="margin-top:12px">
-  <div class="scan-top">
-    <div class="scan-top-left">
-      <div class="field-group">
-        <div class="muted">Add ticker</div>
-        <div class="field-row">
-          <input type="text" id="sc_input" placeholder="MSFT">
-          <button class="btn primary" type="button" onclick="addTicker()">Add</button>
-          <div class="suffix-input">
-            <input type="number" id="sc_window" class="num" value="10" min="0.01" step="0.5">
-            <span class="suffix">%</span>
-          </div>
-        </div>
+  <div class="scan-toolbar">
+    <div class="scan-toolbar-primary">
+      <div class="scan-compact-field">
+        <div class="muted">Tickers</div>
+        <button class="btn secondary app-icon-btn scan-favorites-btn" type="button" onclick="scOpenFavoritesModal()" aria-label="Edit favorites">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m12 3 2.7 5.47 6.03.88-4.36 4.25 1.03 6.01L12 16.98 6.6 19.61l1.03-6.01L3.27 9.35l6.03-.88L12 3z"></path>
+          </svg>
+          <span id="sc_fav_btn_text" class="scan-favorites-btn-count">0 saved</span>
+        </button>
       </div>
-      <div class="field-group">
+      <div class="scan-compact-field">
         <div class="muted">Scope</div>
         <select id="sc_scope" class="select-input">
+          <option value="0dte">0DTE</option>
+          <option value="1dte">1DTE</option>
           <option value="weekly">Weekly</option>
           <option value="monthly">Monthly</option>
+          <option value="m1">M1</option>
+          <option value="m2">M2</option>
           <option value="all" selected>All</option>
         </select>
       </div>
-      <div class="field-group">
-        <div class="muted">Options Filter</div>
-        <label class="spot-toggle" for="sc_include_0dte">
+      <div class="scan-toggle-field">
+        <label class="scan-toggle-chip" id="sc_remove_0dte_chip" for="sc_include_0dte">
           <input type="checkbox" id="sc_include_0dte">
-          <span>Remove 0DTE</span>
+          <span class="scan-toggle-switch" aria-hidden="true"></span>
+          <span class="scan-toggle-chip-text">Remove 0DTE</span>
         </label>
       </div>
     </div>
-    <div class="scan-actions">
-      <span class="muted" id="sc_status"></span>
-      <div class="progress-sm"><div class="bar-sm" id="sc_bar"></div></div>
-      <span class="muted" id="sc_bar_pct"></span>
+    <div class="scan-toolbar-status">
+      <div class="scan-progress-inline">
+        <div class="progress-sm"><div class="bar-sm" id="sc_bar"></div></div>
+        <span class="scan-progress-pct" id="sc_bar_pct">0%</span>
+        <span class="muted scan-state-text" id="sc_status">Idle</span>
+      </div>
       <div class="scan-runstop">
         <button class="btn run-btn" id="sc_run_btn" type="button" onclick="runScan()">Run</button>
         <button class="btn stop-btn" id="sc_stop_btn" type="button" onclick="stopScan()">Stop</button>
       </div>
     </div>
   </div>
-  <div class="muted scan-top-note">Window controls strike coverage for the GEX pull used in each scanner row.</div>
-  <div class="chip-scroll">
-    <div id="sc_list" class="chip-row"></div>
-  </div>
 </div>
 
 <div class="card" style="margin-top:12px">
-  <div class="muted" id="sc_timestamp" style="font-style:italic">Scanner results</div>
-  <div class="muted" id="sc_loadtime" style="font-style:italic;margin-top:4px">Load time —</div>
-  <div class="muted-small" id="sc_sort_mode" style="margin-top:4px">Sort: Net GEX (Spot-Scaled)</div>
+  <div class="scan-table-head">
+    <div class="muted-small" id="sc_sort_mode">Sort: Net GEX</div>
+    <div class="table-note" style="margin-top:0">Click columns to toggle sorting.</div>
+  </div>
   <div id="sc_table_wrap" style="margin-top:8px"></div>
-  <div class="table-note">Click columns to toggle sorting.</div>
+  <div class="scan-legend"><strong>Legend:</strong> red left band + dimmed row = excluded from the active expiration filter, excluded from sorting rank, and not refreshed for the current run.</div>
 </div>
 
 <div id="scanner_defaults" data-json='{{ defaults_json | tojson | safe }}' hidden></div>
+<div id="sc_favorites_modal" class="app-modal-shell app-modal-backdrop scan-favorites-modal">
+  <div class="card app-modal-card app-modal-panel">
+    <div class="app-modal-header">
+      <div>
+        <div class="card-title">Scanner Favorites</div>
+        <div class="muted" style="margin-top:8px">Manage the saved tickers and default windows shared with the Home page.</div>
+      </div>
+      <button class="btn secondary" type="button" onclick="scCloseFavoritesModal()">Close</button>
+    </div>
+    <div class="fav-editor-stack" style="margin-top:16px">
+      <div class="fav-editor-form">
+        <div class="fav-editor-field fav-editor-field--ticker">
+          <label class="muted" for="sc_input">Ticker</label>
+          <input type="text" id="sc_input" aria-label="Scanner favorite ticker">
+        </div>
+        <div class="fav-editor-field fav-editor-field--window">
+          <label class="muted" for="sc_window">Window</label>
+          <div class="suffix-input">
+            <input type="number" id="sc_window" class="num" value="10" min="0.01" step="0.5" aria-label="Scanner favorite window percentage">
+            <span class="suffix">%</span>
+          </div>
+        </div>
+        <button class="btn primary" type="button" onclick="addTicker()">Add</button>
+      </div>
+      <div id="sc_list" class="fav-editor-list"></div>
+    </div>
+  </div>
+</div>
 <script>
 function parseDefaults() {
   try {
@@ -125,6 +235,51 @@ let scJobId = null;
 let scPollTimer = null;
 let sortKey = 'net_gex';
 let sortDir = -1;
+const scContext = {status:'Idle', updated:'—', load:'—'};
+
+function formatSavedTickerCount(count) {
+  return `${count} ${count === 1 ? 'saved' : 'saved'}`;
+}
+
+function titleCase(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return 'Idle';
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+function updateScannerContext(partial) {
+  if (partial && typeof partial === 'object') Object.assign(scContext, partial);
+  const scope = (document.getElementById('sc_scope')?.value || 'all').toUpperCase();
+  const remove0dte = !!document.getElementById('sc_include_0dte')?.checked;
+  const savedCount = formatSavedTickerCount(tickers.length);
+  const scopeEl = document.getElementById('sc_ctx_scope');
+  const dteEl = document.getElementById('sc_ctx_dte');
+  const tickersEl = document.getElementById('sc_ctx_tickers');
+  const statusEl = document.getElementById('sc_ctx_status');
+  const updatedEl = document.getElementById('sc_ctx_updated');
+  const loadEl = document.getElementById('sc_ctx_load');
+  const btnText = document.getElementById('sc_fav_btn_text');
+  if (scopeEl) scopeEl.textContent = scope;
+  if (dteEl) dteEl.textContent = remove0dte ? 'Removed' : 'Included';
+  if (tickersEl) tickersEl.textContent = savedCount;
+  if (statusEl) statusEl.textContent = scContext.status || 'Idle';
+  if (updatedEl) updatedEl.textContent = scContext.updated || '—';
+  if (loadEl) loadEl.textContent = scContext.load || '—';
+  if (btnText) btnText.textContent = savedCount;
+  document.getElementById('sc_remove_0dte_chip')?.classList.toggle('scan-toggle-chip--on', remove0dte);
+}
+
+function scOpenFavoritesModal() {
+  const modal = document.getElementById('sc_favorites_modal');
+  if (!modal) return;
+  modal.classList.add('open');
+  renderTickers();
+  setTimeout(() => document.getElementById('sc_input')?.focus(), 0);
+}
+
+function scCloseFavoritesModal() {
+  document.getElementById('sc_favorites_modal')?.classList.remove('open');
+}
 
 function normalizeTickers(list) {
   const fallback = Number(document.getElementById('sc_window')?.value || 10) || 10;
@@ -154,16 +309,28 @@ function renderTickers() {
   const wrap = document.getElementById('sc_list');
   if (!wrap) return;
   if (!tickers.length) {
-    wrap.innerHTML = '<div class="empty-hint">Add tickers to scan.</div>';
+    wrap.innerHTML = '<div class="fav-editor-empty">No saved scanner tickers yet.</div>';
+    updateScannerContext();
     return;
   }
   wrap.innerHTML = tickers.map((ticker) => `
-    <span class="scan-chip">
-      <span>${ticker.symbol}</span>
-      <input type="number" value="${ticker.window}" min="0.01" step="0.5" style="width:70px;padding:4px;border-radius:6px;border:1px solid #1f2937;background:#0f172a;color:#e5e7eb" onchange="updateTickerWindow('${ticker.symbol}', this.value)">
-      <button title="Remove" onclick="removeTicker('${ticker.symbol}')">×</button>
-    </span>
+    <div class="fav-editor-item">
+      <div class="fav-editor-meta">
+        <span class="fav-editor-symbol">${ticker.symbol}</span>
+      </div>
+      <div class="fav-editor-actions">
+        <div class="suffix-input" style="width:82px">
+          <input type="number" value="${ticker.window}" min="0.01" step="0.5" onchange="updateTickerWindow('${ticker.symbol}', this.value)" aria-label="Window for ${ticker.symbol}">
+          <span class="suffix">%</span>
+        </div>
+        <a class="btn secondary fav-editor-query" href="/gexticker/${encodeURIComponent(ticker.symbol)}?window=${encodeURIComponent(ticker.window)}">Query</a>
+        <button class="btn fav-editor-remove" type="button" aria-label="Remove ${ticker.symbol}" onclick="removeTicker('${ticker.symbol}')">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8h10"></path></svg>
+        </button>
+      </div>
+    </div>
   `).join('');
+  updateScannerContext();
 }
 
 function addTicker() {
@@ -174,7 +341,7 @@ function addTicker() {
     tickers.push({symbol, window:Number(document.getElementById('sc_window')?.value || 10)});
     saveTickers();
     renderTickers();
-    runScan();
+    updateScannerContext();
   }
   if (input) input.value = '';
 }
@@ -184,11 +351,13 @@ function removeTicker(symbol) {
   saveTickers();
   renderTickers();
   renderTable();
+  updateScannerContext();
 }
 
 function updateTickerWindow(symbol, value) {
   tickers = tickers.map((item) => item.symbol === symbol ? {symbol, window:Number(value) || 10} : item);
   saveTickers();
+  renderTickers();
 }
 
 function fmtNum(value) {
@@ -212,6 +381,38 @@ function fmtPct(value) {
   if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
   const num = Number(value);
   return (num >= 0 ? '+' : '') + num.toFixed(2) + '%';
+}
+
+function fmtSignedScore(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
+  const num = Number(value);
+  return (num >= 0 ? '+' : '') + num.toFixed(2);
+}
+
+function fmtSignedAbbrev(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return 'N/A';
+  const num = Number(value);
+  const text = fmtAbbrev(Math.abs(num));
+  return (num >= 0 ? '+' : '-') + text;
+}
+
+function fmtDensity(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return '—';
+  return Number(value).toFixed(0) + '%';
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function monthlyLabel(expiry, isMonthly) {
+  if (!expiry) return '';
+  return isMonthly ? `${expiry} (M)` : expiry;
 }
 
 function regimeBadge(regime) {
@@ -240,12 +441,14 @@ function updateSortLabel() {
   if (!label) return;
   const titles = {
     symbol: 'Symbol',
-      spot: 'Spot',
-      net_gex: 'Net GEX (Spot-Scaled)',
-      zero_gamma: 'Zero Gamma',
-      gamma_regime: 'Gamma Regime',
-      gamma_confidence: 'Gamma Confidence',
-    };
+    spot: 'Spot',
+    zero_gamma: 'Zero Gamma',
+    gamma_regime: 'Gamma Regime',
+    net_gex: 'Net GEX',
+    term_shape_bias: 'Term Shape',
+    spot_density: 'Spot Density',
+    gamma_confidence: 'Confidence',
+  };
   label.textContent = 'Sort: ' + (titles[sortKey] || sortKey);
 }
 
@@ -258,6 +461,145 @@ function setSort(key) {
   renderTable();
 }
 
+function normalizedTermShape(termShape) {
+  const fallback = [
+    {anchor:'W1', expiry:null, value:null, monthly:false, applicable:false},
+    {anchor:'M1', expiry:null, value:null, monthly:true, applicable:false},
+    {anchor:'M2', expiry:null, value:null, monthly:true, applicable:false},
+  ];
+  const rows = Array.isArray(termShape?.anchors) ? termShape.anchors : [];
+  const byAnchor = new Map(rows.map((row) => [String(row?.anchor || '').toUpperCase(), row || {}]));
+  return fallback.map((item) => {
+    const row = byAnchor.get(item.anchor) || {};
+    const value = row.value;
+    return {
+      anchor: item.anchor,
+      expiry: row.expiry || null,
+      value: value === null || value === undefined || Number.isNaN(Number(value)) ? null : Number(value),
+      monthly: row.monthly === undefined ? item.monthly : !!row.monthly,
+      applicable: !!row.applicable,
+    };
+  });
+}
+
+function termShapeValueClass(value) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return 'na';
+  return Number(value) >= 0 ? 'pos' : 'neg';
+}
+
+function renderTermShapeSparkline(termShape) {
+  const anchors = normalizedTermShape(termShape);
+  const xs = [10, 34, 58];
+  const baselineY = 13;
+  const valid = anchors.filter((item) => item.applicable && item.value !== null).map((item) => Math.abs(item.value));
+  const maxAbs = Math.max(...valid, 1);
+  const yFor = (item) => {
+    if (!item.applicable || item.value === null) return baselineY;
+    const scaled = (item.value / maxAbs) * 8.5;
+    return Math.max(3, Math.min(23, baselineY - scaled));
+  };
+  let segments = `<line x1="4" y1="${baselineY}" x2="64" y2="${baselineY}" stroke="rgba(148,163,184,0.18)" stroke-width="1" />`;
+  for (let idx = 0; idx < anchors.length - 1; idx += 1) {
+    const left = anchors[idx];
+    const right = anchors[idx + 1];
+    const x1 = xs[idx];
+    const x2 = xs[idx + 1];
+    if (left.applicable && right.applicable && left.value !== null && right.value !== null) {
+      const avg = (left.value + right.value) / 2;
+      const stroke = avg >= 0 ? 'rgba(74,222,128,0.82)' : 'rgba(248,113,113,0.82)';
+      segments += `<line x1="${x1}" y1="${yFor(left)}" x2="${x2}" y2="${yFor(right)}" stroke="${stroke}" stroke-width="2" stroke-linecap="round" />`;
+    } else {
+      segments += `<line x1="${x1}" y1="${baselineY}" x2="${x2}" y2="${baselineY}" stroke="rgba(148,163,184,0.38)" stroke-width="1.5" stroke-dasharray="3 3" />`;
+    }
+  }
+  const points = anchors.map((item, idx) => {
+    const x = xs[idx];
+    const y = yFor(item);
+    if (!item.applicable || item.value === null) {
+      return `<circle cx="${x}" cy="${baselineY}" r="3.25" fill="rgba(8,17,30,0.92)" stroke="rgba(148,163,184,0.5)" stroke-width="1.4" />`;
+    }
+    const fill = item.value >= 0 ? 'rgba(74,222,128,0.92)' : 'rgba(248,113,113,0.92)';
+    const stroke = item.value >= 0 ? 'rgba(16,185,129,0.92)' : 'rgba(239,68,68,0.92)';
+    return `<circle cx="${x}" cy="${y}" r="3.35" fill="${fill}" stroke="${stroke}" stroke-width="0.9" />`;
+  }).join('');
+  return `
+    <svg class="term-shape-svg" viewBox="0 0 68 26" aria-hidden="true" focusable="false">
+      ${segments}
+      ${points}
+    </svg>
+  `;
+}
+
+function renderTermShapePopover(termShape) {
+  const anchors = normalizedTermShape(termShape);
+  const lines = anchors.map((anchor) => {
+    const expiry = anchor.expiry ? ` · ${monthlyLabel(anchor.expiry, anchor.monthly)}` : '';
+    const valueText = anchor.applicable && anchor.value !== null ? fmtSignedAbbrev(anchor.value) : 'N/A';
+    return `
+      <div class="term-shape-line">
+        <span class="term-shape-line-label">${anchor.anchor}${escapeHtml(expiry)}</span>
+        <span class="term-shape-line-value ${termShapeValueClass(anchor.value)}">${escapeHtml(valueText)}</span>
+      </div>
+    `;
+  }).join('');
+  const biasText = fmtSignedScore(termShape?.bias);
+  const interpretation = termShape?.interpretation || 'Unavailable';
+  return `
+    <div class="term-shape-title">Term Shape</div>
+    ${lines}
+    <div class="term-shape-footer">
+      <span>Bias: ${escapeHtml(biasText)}</span>
+      <span>${escapeHtml(interpretation)}</span>
+    </div>
+  `;
+}
+
+function renderTermShapeCell(row) {
+  if (row.excluded || !row.term_shape) {
+    return '<span class="scan-muted-value">—</span>';
+  }
+  const tooltip = renderTermShapePopover(row.term_shape);
+  return `
+    <div class="term-shape-wrap">
+      <button
+        type="button"
+        class="term-shape-trigger"
+        data-term-shape-trigger
+        aria-expanded="false"
+        aria-haspopup="dialog"
+        aria-label="View term shape details for ${escapeHtml(row.symbol)}"
+        onclick="toggleTermShapePopover(event, this)"
+      >
+        ${renderTermShapeSparkline(row.term_shape)}
+        <span class="term-shape-bias">${escapeHtml(fmtSignedScore(row.term_shape_bias))}</span>
+      </button>
+      <div class="term-shape-popover" role="dialog" aria-label="Term shape details">
+        ${tooltip}
+      </div>
+    </div>
+  `;
+}
+
+function dismissTermShapePopovers(exceptCell) {
+  document.querySelectorAll('.term-shape-cell--open').forEach((cell) => {
+    if (exceptCell && cell === exceptCell) return;
+    cell.classList.remove('term-shape-cell--open');
+    const trigger = cell.querySelector('[data-term-shape-trigger]');
+    if (trigger) trigger.setAttribute('aria-expanded', 'false');
+  });
+}
+
+function toggleTermShapePopover(event, trigger) {
+  event.preventDefault();
+  event.stopPropagation();
+  const cell = trigger?.closest('.term-shape-cell');
+  if (!cell) return;
+  const willOpen = !cell.classList.contains('term-shape-cell--open');
+  dismissTermShapePopovers(cell);
+  cell.classList.toggle('term-shape-cell--open', willOpen);
+  trigger.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+}
+
 function renderTable() {
   const wrap = document.getElementById('sc_table_wrap');
   if (!wrap) return;
@@ -267,6 +609,7 @@ function renderTable() {
     return;
   }
   const sorted = results.slice().sort((a, b) => {
+    if (!!a.excluded !== !!b.excluded) return a.excluded ? 1 : -1;
     if (sortKey === 'symbol' || sortKey === 'gamma_regime' || sortKey === 'gamma_confidence') {
       const left = (a[sortKey] || '').toString();
       const right = (b[sortKey] || '').toString();
@@ -284,14 +627,30 @@ function renderTable() {
   const rows = sorted.map((row) => {
     const win = tickers.find((item) => item.symbol === row.symbol)?.window;
     const href = `/gexticker/${encodeURIComponent(row.symbol)}${win ? `?window=${encodeURIComponent(win)}` : ''}`;
-    const errorText = row.error ? `<div class="table-note" style="margin-top:4px">${row.error}</div>` : '';
+    const errorText = (!row.excluded && row.error) ? `<div class="table-note" style="margin-top:4px">${row.error}</div>` : '';
+    const exclusionText = row.excluded ? `<div class="table-note" style="margin-top:4px">${row.error || 'Excluded from active filter'}</div>` : '';
+    const expiryMeta = row.selected_expiry
+      ? `<span>${monthlyLabel(row.selected_expiry, row.selected_expiry_is_monthly)}</span>`
+      : '';
+    const metaLine = (expiryMeta || row.scope)
+      ? `<div class="scan-symbol-meta">${expiryMeta}${row.selected_expiry_is_monthly ? '<span class="scan-monthly-chip">Monthly</span>' : ''}${row.scope ? `<span>${String(row.scope || '').toUpperCase()}</span>` : ''}</div>`
+      : '';
     return `
-      <tr>
-        <td class="col-symbol"><strong><a href="${href}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${row.symbol}${win ? ` (${win}%)` : ''}</a></strong>${errorText}</td>
+      <tr class="${row.excluded ? 'scan-row--excluded' : ''}">
+        <td class="col-symbol">
+          <div class="scan-symbol-cell">
+            <strong><a href="${href}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${row.symbol}${win ? ` (${win}%)` : ''}</a></strong>
+            ${metaLine}
+            ${exclusionText}
+            ${errorText}
+          </div>
+        </td>
         <td class="col-spot">${fmtNum(row.spot)}</td>
-        <td class="col-zero">${row.zero_gamma === null || row.zero_gamma === undefined ? 'No zero gamma in tested range' : fmtNum(row.zero_gamma)}</td>
+        <td class="col-zero">${row.zero_gamma === null || row.zero_gamma === undefined ? '<span class="scan-muted-value">—</span>' : fmtNum(row.zero_gamma)}</td>
         <td class="col-regime">${regimeBadge(row.gamma_regime)}</td>
         <td class="col-net">${fmtAbbrev(row.net_gex)}</td>
+        <td class="col-term term-shape-cell">${renderTermShapeCell(row)}</td>
+        <td class="col-density">${fmtDensity(row.spot_density)}</td>
         <td class="col-confidence">${confidenceBadge(row.gamma_confidence)}</td>
       </tr>
     `;
@@ -305,8 +664,10 @@ function renderTable() {
             <th class="col-spot" onclick="setSort('spot')">Spot${sortArrow('spot')}</th>
             <th class="col-zero" onclick="setSort('zero_gamma')">Zero Gamma${sortArrow('zero_gamma')}</th>
             <th class="col-regime" onclick="setSort('gamma_regime')">Gamma Regime${sortArrow('gamma_regime')}</th>
-            <th class="col-net" onclick="setSort('net_gex')">Net GEX (Spot-Scaled)${sortArrow('net_gex')}</th>
-            <th class="col-confidence" onclick="setSort('gamma_confidence')">Gamma Confidence${sortArrow('gamma_confidence')}</th>
+            <th class="col-net" onclick="setSort('net_gex')">Net GEX${sortArrow('net_gex')}</th>
+            <th class="col-term" onclick="setSort('term_shape_bias')" title="Signed W1/M1/M2 net GEX shape. W1 is the nearest non-monthly weekly anchor; M1 and M2 are exact monthlies.">Term Shape${sortArrow('term_shape_bias')}</th>
+            <th class="col-density" onclick="setSort('spot_density')" title="Local gamma concentration near spot. Higher values imply tighter pinning around the current price.">Spot Density${sortArrow('spot_density')}</th>
+            <th class="col-confidence" onclick="setSort('gamma_confidence')">Confidence${sortArrow('gamma_confidence')}</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -346,9 +707,11 @@ async function runScan() {
   const statusEl = document.getElementById('sc_status');
   if (!tickers.length) {
     if (statusEl) statusEl.textContent = 'Add tickers to start.';
+    updateScannerContext({status:'Awaiting tickers'});
     return;
   }
   if (statusEl) statusEl.textContent = 'Starting...';
+  updateScannerContext({status:'Starting', updated:'—', load:'—'});
   updateBar(0);
   try {
     const payload = {
@@ -367,11 +730,13 @@ async function runScan() {
     scJobId = json.job_id;
     updateActionButtons();
     if (statusEl) statusEl.textContent = 'Scanning...';
+    updateScannerContext({status:'Scanning'});
     pollScanner();
   } catch(e) {
     if (statusEl) statusEl.textContent = 'Error: ' + (e?.message || e);
     scJobId = null;
     updateActionButtons();
+    updateScannerContext({status:'Error'});
   }
 }
 
@@ -387,19 +752,17 @@ async function pollScanner() {
       const msg = (status.done !== undefined && status.total !== undefined) ? `${status.done}/${status.total}${status.last ? (' • ' + status.last) : ''}` : '';
       statusEl.textContent = (status.status || '') + (msg ? (' — ' + msg) : '');
     }
+    updateScannerContext({status:titleCase(status.status || 'running')});
     if (status.status === 'done') {
       const res = await fetch(`/api/scanner/result?job_id=${scJobId}`);
       if (res.status === 204) return;
       const data = await res.json();
       results = data.results || [];
-      const ts = document.getElementById('sc_timestamp');
-      const lt = document.getElementById('sc_loadtime');
-      if (ts) {
-        const scope = (data.scope || document.getElementById('sc_scope')?.value || 'all').toUpperCase();
-        const dteText = data.remove_0dte ? '0DTE removed' : '0DTE included';
-        ts.textContent = `Completed: ${data.as_of || '—'} • ${scope} • ${dteText}`;
-      }
-      if (lt) lt.textContent = `Load time: ${Number(data.duration_secs || 0).toFixed(2)}s`;
+      updateScannerContext({
+        status:'Completed',
+        updated:data.as_of || '—',
+        load:`${Number(data.duration_secs || 0).toFixed(2)}s`,
+      });
       renderTable();
       updateBar(1);
       scJobId = null;
@@ -409,6 +772,7 @@ async function pollScanner() {
     if (status.status === 'cancelled' || status.status === 'error') {
       scJobId = null;
       updateActionButtons();
+      updateScannerContext({status:titleCase(status.status || 'error')});
       return;
     }
     scPollTimer = setTimeout(pollScanner, 900);
@@ -417,6 +781,7 @@ async function pollScanner() {
     if (statusEl) statusEl.textContent = 'Error: ' + (e?.message || e);
     scJobId = null;
     updateActionButtons();
+    updateScannerContext({status:'Error'});
   }
 }
 
@@ -440,6 +805,7 @@ async function stopScan(nonBlocking) {
   const statusEl = document.getElementById('sc_status');
   if (statusEl) statusEl.textContent = 'Stopped';
   updateActionButtons();
+  updateScannerContext({status:'Stopped'});
 }
 
 window.addEventListener('beforeunload', () => { stopScan(true); });
@@ -448,13 +814,23 @@ try {
   if (home) home.addEventListener('click', () => stopScan(true));
 } catch(e) {}
 
-document.getElementById('sc_scope')?.addEventListener('change', runScan);
-document.getElementById('sc_include_0dte')?.addEventListener('change', runScan);
+document.addEventListener('click', (event) => {
+  if (!event.target.closest('.term-shape-cell')) dismissTermShapePopovers();
+  if (event.target && event.target.id === 'sc_favorites_modal') scCloseFavoritesModal();
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') dismissTermShapePopovers();
+  if (event.key === 'Escape' && document.getElementById('sc_favorites_modal')?.classList.contains('open')) scCloseFavoritesModal();
+});
+
+document.getElementById('sc_scope')?.addEventListener('change', updateScannerContext);
+document.getElementById('sc_include_0dte')?.addEventListener('change', updateScannerContext);
 
 loadTickers();
 renderTickers();
 renderTable();
 updateActionButtons();
-setTimeout(runScan, 150);
+updateScannerContext();
 </script>
 {% endblock %}

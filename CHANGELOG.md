@@ -2,6 +2,64 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.2.1] - 2026-03-12
+
+### Highlights
+
+- Expiration-aware analytics with expanded scope controls (`0DTE`, `1DTE`, `Weekly`, `Monthly`, `M1`, `M2`, `All`)
+- Gamma Scanner **Term Shape** visualization using W1/M1/M2 anchors
+- Confidence normalization based on the resolved expiration set rather than symbolic scope labels
+- Improved scanner usability with context strips, cleaner layout, and favorites modal management
+
+---
+
+### Added
+
+- Added shared expiration-scope helpers in `core/gamma_math.py` supporting `0DTE`, `1DTE`, `Weekly`, `Monthly`, `M1`, `M2`, and `All`, including monthly-expiration classification and W1/M1/M2 anchor discovery.
+- Added scanner **Term Shape analytics** with W1/M1/M2 anchors, spot-density scoring, exclusion metadata, and explicit anchor payloads in both live and demo mode.
+- Added expiry-scope metadata to `/api/expiries` and to GEX/scanner payloads so the frontend can disable unsupported scopes and display the exact expirations included in each query.
+- Added regression coverage for scope resolution, scanner payload shaping, and confidence parity when different symbolic scopes resolve to the same expiration set.
+
+---
+
+### Changed
+
+- Updated GEX scope resolution to determine the effective expiration universe before cache lookup, job launch, demo payload generation, and solver-preview work.
+- Updated the Scanner and Vanna UI to expose expanded scope choices (`0DTE`, `1DTE`, `M1`, `M2`) and clearer page-context strips.
+- Updated the Scanner page to use manual run operation, consistent with GEX and Vanna query pages.
+- Updated README, release documentation, architecture notes, and screenshot assets for the `v0.2.1` release.
+
+---
+
+### Fixed
+
+- Fixed confidence labeling to derive from solver diagnostics for the **resolved expiration set** rather than the requested symbolic scope label.
+- Fixed unsupported-scope handling so scanner rows return null metrics with explicit exclusion reasons instead of stale or misleading values.
+- Fixed expiry-list caching so partial or timed-out fetches do not overwrite valid cached expiration sets unless enough useful data was gathered.
+- Fixed expiration metadata propagation for cached and demo GEX responses so page details remain aligned with the rendered scope.
+
+---
+
+### Performance
+
+- Reduced repeated resolution drift by sharing normalized scope handling across GEX start, solver preview, scanner summaries, and demo payload generation.
+- Improved expiry discovery by paging contract references up to configured limits and caching only complete or materially useful results.
+
+---
+
+### UX / UI
+
+- Added scanner context strip, **Term Shape sparkline column**, monthly-expiry indicators, and excluded-row styling.
+- Expanded GEX and Vanna scope selectors to include `0DTE`, `1DTE`, `M1`, and `M2`, with clearer page-level query context and inclusion messaging.
+- Tightened home-page context and screenshot-ready states around demo mode and favorites.
+
+---
+
+### Diagnostics / Developer Experience
+
+- Added richer metadata around monthly expirations, selected scope, selected expirations, 0DTE removal, and confidence basis.
+- Bumped the active gamma calculation token to `gamma-v5` so cached payloads from older scope semantics do not bleed into the current release.
+
 ## [0.2.0] - 2026-03-11
 
 ### Added

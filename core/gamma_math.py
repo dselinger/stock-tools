@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable, Sequence
 
 CONTRACT_MULTIPLIER = 100.0
@@ -392,6 +392,206 @@ def _sorted_expirations(values: Iterable[Any] | None) -> list[str]:
     return sorted({_date_key(value) for value in values or [] if _date_key(value)})
 
 
+SCANNER_EXPIRY_SCOPES = {
+    "0dte",
+    "1dte",
+    "weekly",
+    "monthly",
+    "m1",
+    "m2",
+    "all",
+}
+
+_EXPIRY_SCOPE_ALIASES = {
+    "selected": "selected",
+    "current": "selected",
+    "0dte": "0dte",
+    "zero_dte": "0dte",
+    "1dte": "1dte",
+    "one_dte": "1dte",
+    "weekly": "weekly",
+    "monthly": "monthly",
+    "m1": "m1",
+    "m2": "m2",
+    "all": "all",
+}
+
+
+def normalize_expiration_scope(scope: str | None, *, default: str = "all") -> str:
+    raw = str(scope or "").strip().lower()
+    if not raw:
+        return default
+    return _EXPIRY_SCOPE_ALIASES.get(raw, raw)
+
+
+def _parse_iso_expiration(raw_expiry: Any) -> date | None:
+    expiry = _date_key(raw_expiry)
+    if not expiry:
+        return None
+    try:
+        return datetime.fromisoformat(expiry).date()
+    except ValueError:
+        return None
+
+
+def is_standard_monthly_expiration(raw_expiry: Any) -> bool:
+    """Return True for standard monthly expirations.
+
+    This app treats standard monthlies as the listed third-Friday expirations.
+    """
+
+    exp_date = _parse_iso_expiration(raw_expiry)
+    if exp_date is None:
+        return False
+    first_day = exp_date.replace(day=1)
+    first_friday_offset = (4 - first_day.weekday()) % 7
+    third_friday = first_day + timedelta(days=first_friday_offset + 14)
+    return exp_date == third_friday
+
+
+def monthly_expiration_dates(
+    expiries: Sequence[str] | None,
+    *,
+    today_iso: str | None = None,
+) -> list[str]:
+    today_key = today_iso or datetime.now(timezone.utc).date().isoformat()
+    today_date = _parse_iso_expiration(today_key) or datetime.now(timezone.utc).date()
+    monthly = []
+    for expiry in _sorted_expirations(expiries):
+        exp_date = _parse_iso_expiration(expiry)
+        if exp_date is None or exp_date < today_date:
+            continue
+        if is_standard_monthly_expiration(expiry):
+            monthly.append(expiry)
+    return monthly
+
+
+def next_monthly_expiration(
+    expiries: Sequence[str] | None,
+    *,
+    index: int = 1,
+    today_iso: str | None = None,
+) -> str | None:
+    monthly = monthly_expiration_dates(expiries, today_iso=today_iso)
+    idx = max(int(index), 1) - 1
+    return monthly[idx] if idx < len(monthly) else None
+
+
+def weekly_anchor_expiration(
+    expiries: Sequence[str] | None,
+    *,
+    today_iso: str | None = None,
+) -> str | None:
+    """Return the nearest future non-monthly weekly-style expiration.
+
+    W1 is intended as a consistent front weekly anchor for the scanner term-shape
+    display. It intentionally skips standard monthly expirations so W1, M1, and
+    M2 preserve stable semantic positions across names.
+    """
+
+    today_key = today_iso or datetime.now(timezone.utc).date().isoformat()
+    today_date = _parse_iso_expiration(today_key) or datetime.now(timezone.utc).date()
+    for expiry in _sorted_expirations(expiries):
+        exp_date = _parse_iso_expiration(expiry)
+        if exp_date is None or exp_date < today_date:
+            continue
+        if is_standard_monthly_expiration(expiry):
+            continue
+        return expiry
+    return None
+
+
+def term_shape_anchor_expirations(
+    expiries: Sequence[str] | None,
+    *,
+    today_iso: str | None = None,
+) -> dict[str, str | None]:
+    return {
+        "w1": weekly_anchor_expiration(expiries, today_iso=today_iso),
+        "m1": next_monthly_expiration(expiries, index=1, today_iso=today_iso),
+        "m2": next_monthly_expiration(expiries, index=2, today_iso=today_iso),
+    }
+
+
+def has_same_day_expiration(expiries: Sequence[str] | None, *, today_iso: str | None = None) -> bool:
+    today_key = today_iso or datetime.now(timezone.utc).date().isoformat()
+    return today_key in set(_sorted_expirations(expiries))
+
+
+def next_trading_day_expiration(
+    expiries: Sequence[str] | None,
+    *,
+    today_iso: str | None = None,
+) -> str | None:
+    today_key = today_iso or datetime.now(timezone.utc).date().isoformat()
+    today_date = _parse_iso_expiration(today_key) or datetime.now(timezone.utc).date()
+    next_day = today_date + timedelta(days=1)
+    while next_day.weekday() >= 5:
+        next_day += timedelta(days=1)
+    target = next_day.isoformat()
+    return target if target in set(_sorted_expirations(expiries)) else None
+
+
+def has_next_trading_day_expiration(
+    expiries: Sequence[str] | None,
+    *,
+    today_iso: str | None = None,
+) -> bool:
+    return next_trading_day_expiration(expiries, today_iso=today_iso) is not None
+
+
+def expiration_scope_expirations(
+    expiries: Sequence[str] | None,
+    scope: str,
+    *,
+    today_iso: str | None = None,
+    weekly_horizon_days: int = WEEKLY_HORIZON_DAYS,
+) -> list[str]:
+    scope_key = normalize_expiration_scope(scope, default="all")
+    today_key = today_iso or datetime.now(timezone.utc).date().isoformat()
+    today_date = _parse_iso_expiration(today_key) or datetime.now(timezone.utc).date()
+    normalized = _sorted_expirations(expiries)
+    dated: list[tuple[str, date, int]] = []
+    for expiry in normalized:
+        exp_date = _parse_iso_expiration(expiry)
+        if exp_date is None:
+            continue
+        delta_days = (exp_date - today_date).days
+        if delta_days < 0:
+            continue
+        dated.append((expiry, exp_date, delta_days))
+    if scope_key == "all":
+        return [expiry for expiry, _exp_date, _delta in dated]
+    if scope_key == "0dte":
+        return [expiry for expiry, _exp_date, delta in dated if delta == 0]
+    if scope_key == "1dte":
+        next_expiry = next_trading_day_expiration(normalized, today_iso=today_key)
+        return [next_expiry] if next_expiry else []
+    if scope_key == "weekly":
+        return [expiry for expiry, _exp_date, delta in dated if delta <= weekly_horizon_days]
+    if scope_key == "monthly":
+        return [expiry for expiry, _exp_date, _delta in dated if is_standard_monthly_expiration(expiry)]
+    if scope_key == "m1":
+        expiry = next_monthly_expiration(normalized, index=1, today_iso=today_key)
+        return [expiry] if expiry else []
+    if scope_key == "m2":
+        expiry = next_monthly_expiration(normalized, index=2, today_iso=today_key)
+        return [expiry] if expiry else []
+    return [expiry for expiry, _exp_date, _delta in dated]
+
+
+def expiration_scope_support(
+    expiries: Sequence[str] | None,
+    scope: str,
+    *,
+    today_iso: str | None = None,
+) -> bool:
+    scope_key = normalize_expiration_scope(scope, default="all")
+    if scope_key == "selected":
+        return bool(_sorted_expirations(expiries))
+    return bool(expiration_scope_expirations(expiries, scope_key, today_iso=today_iso))
+
+
 def resolve_gamma_expiration_selection(
     available_expirations: Sequence[str] | None,
     *,
@@ -404,9 +604,11 @@ def resolve_gamma_expiration_selection(
 ) -> dict[str, Any]:
     today_key = today_iso or datetime.now(timezone.utc).date().isoformat()
     available = _sorted_expirations(available_expirations)
-    scope_key = (scanner_scope or selected_scope or "selected").strip().lower()
-    if scope_key in {"weekly", "monthly", "all"} and scanner_scope:
+    scope_key = normalize_expiration_scope(scanner_scope or selected_scope, default="selected")
+    if scanner_scope and scope_key in SCANNER_EXPIRY_SCOPES:
         scoped = scanner_scope_expirations(available, scope_key, today_iso=today_key)
+    elif scope_key in {"0dte", "1dte", "weekly", "monthly", "m1", "m2"}:
+        scoped = expiration_scope_expirations(available, scope_key, today_iso=today_key)
     else:
         scoped = list(available)
     requested_set = (
@@ -416,6 +618,9 @@ def resolve_gamma_expiration_selection(
     if scope_key == "selected":
         included = [selected_key] if selected_key and selected_key in scoped else []
         filter_mode = "selected"
+    elif scope_key in {"0dte", "1dte", "weekly", "monthly", "m1", "m2"}:
+        included = list(scoped)
+        filter_mode = scope_key
     else:
         requested_lookup = set(requested_set or [])
         included = (
@@ -435,7 +640,7 @@ def resolve_gamma_expiration_selection(
         if expiry in included:
             excluded_reason_map[expiry] = "included"
             continue
-        if scope_key in {"weekly", "monthly"} and expiry not in set(scoped):
+        if scope_key in {"0dte", "1dte", "weekly", "monthly", "m1", "m2"} and expiry not in set(scoped):
             excluded_reason_map[expiry] = f"outside_{scope_key}_scope"
             continue
         if scope_key == "selected":
@@ -461,7 +666,9 @@ def resolve_gamma_expiration_selection(
         "selected_scope": scope_key,
         "selected_expiry": selected_key,
         "selected_expiration_set": (
-            list(requested_set) if requested_set is not None else list(scoped)
+            list(requested_set)
+            if requested_set is not None and scope_key == "all"
+            else list(included if scope_key in {"0dte", "1dte", "weekly", "monthly", "m1", "m2"} else scoped)
         ),
         "custom_filter_active": requested_set is not None,
         "remove_0dte": bool(remove_0dte),
@@ -867,7 +1074,7 @@ def prepare_gamma_analysis(
             continue
         if expiry not in scoped_set:
             scope_key = inclusion.get("selected_scope", selected_scope)
-            if scope_key in {"weekly", "monthly"}:
+            if scope_key in {"0dte", "1dte", "weekly", "monthly", "m1", "m2"}:
                 _bump_drop_reason(drop_audit, f"outside_{scope_key}_scope")
             elif scope_key == "selected":
                 _bump_drop_reason(drop_audit, "outside_selected_expiry")
@@ -1332,6 +1539,47 @@ def compute_zero_gamma(
     }
 
 
+def derive_gamma_solver_confidence(diagnostics: dict[str, Any] | None) -> str | None:
+    """Return a compact confidence label from solver diagnostics only.
+
+    Confidence is intentionally tied to the resolved solver universe and the
+    stability of the zero-gamma search, not to the user-facing symbolic scope
+    label that selected that universe.
+    """
+
+    diag = diagnostics if isinstance(diagnostics, dict) else {}
+    existing = str(diag.get("solver_confidence") or "").strip().lower()
+    if existing in {"high", "medium", "low"}:
+        return existing
+    try:
+        contract_count = int(
+            diag.get("solver_contract_count")
+            or diag.get("valid_contract_count")
+            or diag.get("included_row_count")
+            or 0
+        )
+    except Exception:
+        contract_count = 0
+    if contract_count <= 0:
+        return None
+    has_crossing = bool(diag.get("has_sign_crossing"))
+    try:
+        expansions = int(diag.get("solver_expansions_used") or 0)
+    except Exception:
+        expansions = 0
+    sign_intervals = diag.get("sign_change_intervals") or []
+    interval_count = len(sign_intervals) if isinstance(sign_intervals, list) else 0
+    if not has_crossing:
+        return "medium"
+    if interval_count > 1:
+        return "medium" if expansions <= 1 else "low"
+    if expansions <= 0:
+        return "high"
+    if expansions == 1:
+        return "medium"
+    return "low"
+
+
 def classify_gamma_regime(
     current_spot: float | None,
     zero_gamma: float | None,
@@ -1553,6 +1801,7 @@ def build_gamma_profile(
                 "solver_confidence": solver_confidence,
                 "convergence_status": convergence_status,
                 "published_root_source": published_root_source,
+                "confidence_basis": "resolved_expiration_set",
                 "included_rows_per_pass": [
                     int(item["reduced"]["included_row_count"]) for item in pass_results
                 ],
@@ -1599,6 +1848,7 @@ def build_gamma_profile(
                 ),
             }
         )
+        solver_diag["solver_confidence"] = derive_gamma_solver_confidence(solver_diag)
         solver["diagnostics"] = solver_diag
         total_gamma_at_spot = full_total_gamma_at_spot
     else:
@@ -1652,6 +1902,8 @@ def build_gamma_profile(
             "excluded_expiration_reasons",
             dict(solver_inclusion.get("excluded_expiration_reasons") or {}),
         )
+        solver_diag.setdefault("confidence_basis", "resolved_expiration_set")
+        solver_diag["solver_confidence"] = derive_gamma_solver_confidence(solver_diag)
         solver["diagnostics"] = solver_diag
     if solver_contracts:
         gamma_regime = classify_gamma_regime(current_spot, zero_gamma, total_gamma_at_spot)
@@ -1714,29 +1966,13 @@ def scanner_scope_expirations(
     *,
     today_iso: str | None = None,
     weekly_horizon_days: int = WEEKLY_HORIZON_DAYS,
-    monthly_horizon_days: int = MONTHLY_HORIZON_DAYS,
 ) -> list[str]:
-    today_key = today_iso or datetime.now(timezone.utc).date().isoformat()
-    try:
-        today_date = datetime.fromisoformat(today_key).date()
-    except ValueError:
-        today_date = datetime.now(timezone.utc).date()
-    normalized = sorted({_date_key(exp) for exp in expiries or [] if _date_key(exp)})
-    if scope == "all":
-        return normalized
-    horizon_days = weekly_horizon_days if scope == "weekly" else monthly_horizon_days
-    selected: list[str] = []
-    for expiry in normalized:
-        try:
-            exp_date = datetime.fromisoformat(expiry).date()
-        except ValueError:
-            continue
-        delta_days = (exp_date - today_date).days
-        if delta_days < 0:
-            continue
-        if delta_days <= horizon_days:
-            selected.append(expiry)
-    return selected
+    return expiration_scope_expirations(
+        expiries,
+        scope,
+        today_iso=today_iso,
+        weekly_horizon_days=weekly_horizon_days,
+    )
 
 
 def canonicalize_gex_payload(payload: dict[str, Any] | None) -> dict[str, Any]:

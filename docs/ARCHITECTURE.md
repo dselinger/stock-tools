@@ -101,7 +101,7 @@ The application consumes several categories of endpoints:
 - option snapshot chains by underlying
 - supporting metadata
 
-The acquisition strategy changed significantly in v0.2.0.
+The acquisition strategy changed significantly across the `v0.2.x` line and is now paired with explicit expiry-scope metadata for the frontend.
 
 ### Listing-First Chain Construction
 
@@ -162,6 +162,39 @@ The same normalized chain powers:
 - cache canonicalization
 
 This centralization is the main architectural shift from v0.1.0.
+
+---
+
+## Expiration Scope Model
+
+The current release exposes one shared expiration-scope model across GEX, scanner, Vanna, demo mode, and expiry metadata endpoints.
+
+Supported scopes include:
+
+- selected expiry
+- 0DTE
+- 1DTE
+- weekly
+- monthly
+- M1
+- M2
+- all expirations
+
+`core/gamma_math.py` is responsible for:
+
+- normalizing user-facing scope labels
+- classifying standard monthly expirations
+- resolving the exact included expiration set for each scope
+- deriving stable W1 / M1 / M2 anchors for scanner term-shape analytics
+
+`views.py` applies that shared model before cache lookup and job launch, then returns metadata such as:
+
+- `scope_support`
+- `scope_expirations`
+- `monthly_expirations`
+- `next_trading_day_expiration`
+
+This keeps page controls, cached payloads, and diagnostics aligned to the same effective universe.
 
 ---
 
@@ -279,6 +312,7 @@ Disk Cache
 Cache keys include calculation context such as:
 
 - expiry scope
+- selected expiration set
 - 0DTE inclusion
 - solver configuration
 - calculation version token
@@ -287,7 +321,7 @@ This prevents stale results when solver settings change.
 
 ---
 
-## Performance Improvements in v0.2.0
+## Performance Characteristics in v0.2.1
 
 Most improvements are architectural rather than micro-optimizations.
 
@@ -302,8 +336,14 @@ Chains now fetch beyond the provider’s first page.
 Shared Normalization Pipeline  
 Ticker and scanner now reuse identical normalization logic.
 
+Shared Scope Resolution  
+Ticker, scanner, preview, and demo flows resolve the same effective expiration set up front.
+
 Reduced Solver Universes  
 The solver may refine roots using smaller relevant subsets.
+
+Guarded Expiry Caching  
+Partial expiry-list fetches do not overwrite known-good cached expiration sets unless enough useful data was gathered.
 
 These changes produced roughly:
 
@@ -323,6 +363,7 @@ Provides:
 
 - strike-space GEX charts
 - Net GEX and Zero Gamma summaries
+- scope-aware chart filters and explicit included-expiration context
 - solver configuration
 - full diagnostics and debug JSON
 
@@ -336,7 +377,10 @@ Outputs:
 - zero gamma
 - gamma regime
 - net GEX
+- term shape
+- spot density
 - solver confidence
+- exclusion state and monthly-expiry context
 
 The scanner intentionally mirrors ticker semantics.
 
@@ -349,7 +393,7 @@ Outputs:
 - per-strike vanna
 - accumulated net vanna
 - weighting modes
-- expiry filters
+- shared expiry and scope controls
 - debug diagnostics
 
 The UI framework is shared with the gamma pages.
@@ -364,6 +408,7 @@ Exposed data includes:
 
 - solver diagnostics
 - contract inclusion filters
+- scope support and resolved expirations
 - cache metrics
 - upstream fetch metadata
 - full copyable debug JSON
@@ -379,8 +424,9 @@ The application includes a fully supported demo mode.
 When DEMO_MODE=1:
 
 - bundled payloads replace live market data
-- expiry endpoints return synthetic expirations
+- expiry endpoints return synthetic expirations plus scope metadata
 - ticker and scanner pages render populated examples
+- scanner payloads include explicit W1 / M1 / M2 term-shape anchors
 
 This allows GitHub reviewers to explore the UI without API keys.
 

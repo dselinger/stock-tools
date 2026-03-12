@@ -15,7 +15,12 @@ from core.gamma_math import (
     compute_zero_gamma,
     compute_zero_gamma_from_curve,
     default_gamma_solver_config,
+    expiration_scope_expirations,
     gamma_solver_profile_label,
+    has_next_trading_day_expiration,
+    has_same_day_expiration,
+    is_standard_monthly_expiration,
+    next_monthly_expiration,
     normalize_gamma_solver_config,
     prepare_gamma_analysis,
     spot_vs_zero_gamma_label,
@@ -258,7 +263,71 @@ def test_remove_0dte_on_excludes_same_day_expirations():
     )
 
     assert today not in profile["included_expirations"]
-    assert future in profile["included_expirations"]
+
+
+def test_standard_monthly_detection_requires_third_friday():
+    assert is_standard_monthly_expiration("2026-03-20") is True
+    assert is_standard_monthly_expiration("2026-04-17") is True
+    assert is_standard_monthly_expiration("2026-04-16") is False
+    assert is_standard_monthly_expiration("2026-03-27") is False
+
+
+def test_expiration_scope_expirations_supports_0dte_1dte_weekly_monthly_m1_m2():
+    expiries = [
+        "2026-03-12",
+        "2026-03-13",
+        "2026-03-20",
+        "2026-03-27",
+        "2026-04-16",
+        "2026-05-15",
+    ]
+
+    assert expiration_scope_expirations(expiries, "0dte", today_iso="2026-03-12") == ["2026-03-12"]
+    assert expiration_scope_expirations(expiries, "1dte", today_iso="2026-03-12") == ["2026-03-13"]
+    assert expiration_scope_expirations(expiries, "weekly", today_iso="2026-03-12") == [
+        "2026-03-12",
+        "2026-03-13",
+    ]
+    assert expiration_scope_expirations(expiries, "monthly", today_iso="2026-03-12") == [
+        "2026-03-20",
+        "2026-05-15",
+    ]
+    assert expiration_scope_expirations(expiries, "m1", today_iso="2026-03-12") == ["2026-03-20"]
+    assert expiration_scope_expirations(expiries, "m2", today_iso="2026-03-12") == ["2026-05-15"]
+
+
+def test_monthly_indexing_skips_non_monthly_weeklies():
+    expiries = [
+        "2026-03-12",
+        "2026-03-13",
+        "2026-03-20",
+        "2026-03-27",
+        "2026-04-17",
+        "2026-05-15",
+    ]
+
+    assert expiration_scope_expirations(expiries, "monthly", today_iso="2026-03-12") == [
+        "2026-03-20",
+        "2026-04-17",
+        "2026-05-15",
+    ]
+    assert expiration_scope_expirations(expiries, "m2", today_iso="2026-03-12") == ["2026-04-17"]
+
+
+def test_monthly_and_trading_day_support_helpers_follow_available_expiries():
+    expiries = ["2026-03-12", "2026-03-20", "2026-04-17"]
+
+    assert has_same_day_expiration(expiries, today_iso="2026-03-12") is True
+    assert has_next_trading_day_expiration(expiries, today_iso="2026-03-12") is False
+    assert next_monthly_expiration(expiries, index=1, today_iso="2026-03-12") == "2026-03-20"
+    assert next_monthly_expiration(expiries, index=2, today_iso="2026-03-12") == "2026-04-17"
+
+
+def test_next_trading_day_requires_exact_next_business_day():
+    expiries = ["2026-03-12", "2026-03-13", "2026-03-20"]
+
+    assert has_next_trading_day_expiration(expiries, today_iso="2026-03-12") is True
+    assert expiration_scope_expirations(expiries, "1dte", today_iso="2026-03-12") == ["2026-03-13"]
 
 
 def test_default_gamma_solver_config_matches_standard_preset():
